@@ -45,8 +45,10 @@ final class TranscriptionViewModel {
         #endif
     }
 
+    /// The transcript as plain text. Segments are concatenated as-is: the transcriber already includes
+    /// leading spaces where the language needs them (English) and none where it doesn't (Japanese).
     var fullText: String {
-        segments.map(\.text).joined(separator: " ")
+        segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var isRecording: Bool {
@@ -179,7 +181,7 @@ final class TranscriptionViewModel {
         }
     }
 
-    private func consume(_ stream: AsyncThrowingStream<TranscriptUpdate, Error>) async {
+    func consume(_ stream: AsyncThrowingStream<TranscriptUpdate, Error>) async {
         do {
             for try await update in stream {
                 if update.isFinal {

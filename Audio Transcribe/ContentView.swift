@@ -135,7 +135,7 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(viewModel.segments) { segment in
-                        transcriptRow(timestamp: segment.start, text: segment.text)
+                        transcriptRow(segment)
                             .id(segment.id)
                     }
                     if !viewModel.volatileText.isEmpty {
@@ -177,20 +177,14 @@ struct ContentView: View {
         }
     }
 
-    private func transcriptRow(timestamp: TimeInterval, text: String) -> some View {
+    private func transcriptRow(_ segment: TranscriptSegment) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(formattedTimestamp(timestamp))
+            Text(segment.formattedStart)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .leading)
-            Text(text)
+            Text(segment.text.trimmingCharacters(in: .whitespaces))
         }
-    }
-
-    private func formattedTimestamp(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "--:--" }
-        let totalSeconds = Int(seconds)
-        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 
     private func copyToClipboard(_ text: String) {

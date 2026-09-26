@@ -105,7 +105,7 @@ final class SystemAudioSource {
         tearDown()
     }
 
-    nonisolated private static func copyBuffer(_ bufferList: UnsafePointer<AudioBufferList>, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    nonisolated static func copyBuffer(_ bufferList: UnsafePointer<AudioBufferList>, format: AVAudioFormat) -> AVAudioPCMBuffer? {
         guard let source = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList),
               source.frameLength > 0,
               let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: source.frameLength) else { return nil }
