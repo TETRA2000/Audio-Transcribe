@@ -11,6 +11,7 @@ actor FakeTranscriber: LiveTranscribing {
     private let startError: Error?
     private var continuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation?
     private(set) var finishCount = 0
+    private(set) var appendedBufferCount = 0
 
     init(startError: Error? = nil) {
         self.startError = startError
@@ -23,7 +24,9 @@ actor FakeTranscriber: LiveTranscribing {
         return stream
     }
 
-    func appendLiveAudio(_ buffer: AVAudioPCMBuffer) {}
+    func appendLiveAudio(_ buffer: AVAudioPCMBuffer) {
+        appendedBufferCount += 1
+    }
 
     func finishLiveTranscription() throws {
         finishCount += 1
@@ -61,6 +64,11 @@ final class FakeSource {
                 continuation = nil
             }
         )
+    }
+
+    /// Sends a captured buffer into the stream, as when audio arrives from the source.
+    func send(_ buffer: AVAudioPCMBuffer) {
+        continuation?.yield(buffer)
     }
 
     /// Ends the buffer stream without `stop()`, as when a device is unplugged.

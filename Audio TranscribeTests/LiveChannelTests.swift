@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import Audio_Transcribe
@@ -51,6 +52,35 @@ struct LiveChannelTests {
         #expect(!channel.isRunning)
         #expect(source.stopCount == 1)
         #expect(await transcriber.finishCount == 1)
+    }
+
+    @Test func stopDeliversBuffersQueuedBeforeItWasCalled() async throws {
+        let source = FakeSource()
+        let transcriber = FakeTranscriber()
+        let channel = makeChannel(source, transcriber)
+        try await channel.start(language: .english, sessionStart: Date(), labelSegments: false)
+
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        for _ in 0..<3 {
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1))
+            source.send(buffer)
+        }
+        try await channel.stop()
+
+        #expect(await transcriber.appendedBufferCount == 3)
+    }
+
+    @Test func concurrentStopsBothWaitForTheSameFinish() async throws {
+        let transcriber = FakeTranscriber()
+        let channel = makeChannel(FakeSource(), transcriber)
+        try await channel.start(language: .english, sessionStart: Date(), labelSegments: false)
+        await transcriber.emit(TranscriptUpdate(text: "Hi.", start: 0, end: 1, isFinal: true))
+
+        async let first: Void = channel.stop()
+        try await channel.stop()
+
+        #expect(channel.segments.count == 1)
+        try await first
     }
 
     @Test func stoppingDoesNotReportAnUnexpectedEnd() async throws {

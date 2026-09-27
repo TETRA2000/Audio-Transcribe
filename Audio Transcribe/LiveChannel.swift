@@ -45,6 +45,9 @@ final class LiveChannel {
     @ObservationIgnored private var isStopping = false
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var resultsTask: Task<Void, Never>?
+    /// Set once, by whichever of `stop()`/`sourceDidEnd()` finishes the transcriber first. Kept (never cleared)
+    /// so a later caller awaits this same finish instead of finishing (or dropping pending results) a second time.
+    @ObservationIgnored private var finishTask: Task<Void, Error>?
 
     init(kind: ChannelKind, label: String, source: LiveAudioSource, transcriber: any LiveTranscribing) {
         self.kind = kind
@@ -80,15 +83,22 @@ final class LiveChannel {
         }
     }
 
-    /// Stops the source and waits until the transcriber has delivered its final results. Does nothing if the
-    /// channel isn't running.
+    /// Stops the source, waits for any buffers already produced to reach the transcriber, then waits until the
+    /// transcriber has delivered its final results. Does nothing if the channel never started and no finish is
+    /// already in flight. If a finish is already running — from another `stop()` call, or because the source
+    /// ended by itself — this waits for that same finish instead of starting another.
     func stop() async throws {
-        guard isRunning else { return }
-        isStopping = true
-        source.stop()
-        feedTask?.cancel()
+        guard isRunning || finishTask != nil else { return }
+        if !isStopping {
+            isStopping = true
+            source.stop()
+        }
+        // Let the feed loop drain whatever was already queued before the source stopped, so those buffers still
+        // reach the transcriber; cancelling here would race with `finishLiveTranscription()` clearing its input
+        // state and silently drop them.
+        await feedTask?.value
         feedTask = nil
-        try await finishTranscriber()
+        try await finishTranscriber().value
     }
 
     /// Starts every channel concurrently. If any fails, stops the ones that started and rethrows the first error.
@@ -136,24 +146,34 @@ final class LiveChannel {
         if let firstError { throw firstError }
     }
 
-    private func finishTranscriber() async throws {
+    /// Finishes the transcriber and waits for its final results, exactly once: if a finish is already running,
+    /// its task is returned again instead of starting a second one.
+    @discardableResult
+    private func finishTranscriber() -> Task<Void, Error> {
+        if let finishTask { return finishTask }
         isRunning = false
         let resultsTask = self.resultsTask
         self.resultsTask = nil
-        do {
-            try await transcriber.finishLiveTranscription()
-        } catch {
-            resultsTask?.cancel()
-            throw error
+        let transcriber = self.transcriber
+        let task = Task {
+            do {
+                try await transcriber.finishLiveTranscription()
+            } catch {
+                resultsTask?.cancel()
+                throw error
+            }
+            await resultsTask?.value
         }
-        await resultsTask?.value
+        finishTask = task
+        return task
     }
 
     private func sourceDidEnd() async {
         guard isRunning, !isStopping else { return }
+        isStopping = true
         endedUnexpectedly = true
         source.stop()
-        try? await finishTranscriber()
+        try? await finishTranscriber().value
         onUnexpectedEnd?()
     }
 
