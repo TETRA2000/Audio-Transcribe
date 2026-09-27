@@ -8,6 +8,7 @@ nonisolated enum SystemAudioCaptureError: LocalizedError {
     case formatUnavailable(OSStatus)
     case ioProcCreationFailed(OSStatus)
     case startFailed(OSStatus)
+    case appNotRunning(String)
 
     var errorDescription: String? {
         switch self {
@@ -21,11 +22,13 @@ nonisolated enum SystemAudioCaptureError: LocalizedError {
             "Couldn't register an audio callback (status \(status))."
         case .startFailed(let status):
             "Couldn't start system audio capture (status \(status))."
+        case .appNotRunning(let name):
+            "\(name) isn't running."
         }
     }
 }
 
-/// Captures all system audio output (everything the Mac is currently playing) using a
+/// Captures system audio output (everything the Mac is playing, or one app's audio) using a
 /// Core Audio process tap, and exposes it as a stream of PCM buffers.
 @MainActor
 final class SystemAudioSource {
@@ -34,9 +37,14 @@ final class SystemAudioSource {
     private var ioProcID: AudioDeviceIOProcID?
     private var continuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
 
-    func start() throws -> AsyncStream<AVAudioPCMBuffer> {
-        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
-        tapDescription.isPrivate = true
+    func start(target: SystemAudioTarget = .allAudio) throws -> AsyncStream<AVAudioPCMBuffer> {
+        var processObjectIDs: [AudioObjectID] = []
+        if case .app(let bundleID, let name) = target {
+            // Resolve at start so helper processes launched since the menu was shown are included.
+            processObjectIDs = AudioApps.processObjectIDs(for: bundleID)
+            guard !processObjectIDs.isEmpty else { throw SystemAudioCaptureError.appNotRunning(name) }
+        }
+        let tapDescription = Self.tapDescription(for: target, processObjectIDs: processObjectIDs)
 
         var newTapID = AudioObjectID(kAudioObjectUnknown)
         var status = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
@@ -103,6 +111,16 @@ final class SystemAudioSource {
 
     func stop() {
         tearDown()
+    }
+
+    /// A private stereo tap of all system audio, or a mixdown of just `processObjectIDs` for an app target.
+    static func tapDescription(for target: SystemAudioTarget, processObjectIDs: [AudioObjectID]) -> CATapDescription {
+        let description = switch target {
+        case .allAudio: CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        case .app: CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
+        }
+        description.isPrivate = true
+        return description
     }
 
     nonisolated static func copyBuffer(_ bufferList: UnsafePointer<AudioBufferList>, format: AVAudioFormat) -> AVAudioPCMBuffer? {
