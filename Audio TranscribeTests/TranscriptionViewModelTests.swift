@@ -3,13 +3,45 @@ import Testing
 @testable import Audio_Transcribe
 
 struct TranscriptionViewModelTests {
-    @Test func availableSourceKinds() {
+    @Test func startsInLiveModeWithOnlyTheMicrophoneOn() {
         let viewModel = TranscriptionViewModel()
+        #expect(viewModel.mode == .live)
+        #expect(viewModel.micEnabled)
+        #expect(!viewModel.systemAudioEnabled)
+        #expect(viewModel.systemAudioTarget == .allAudio)
+        #expect(viewModel.selectedMicUID == nil)
+    }
+
+    @Test func systemAudioIsOfferedOnlyOnMacOS() {
         #if os(macOS)
-        #expect(viewModel.availableSourceKinds == [.microphone, .systemAudio, .file])
+        #expect(TranscriptionViewModel().supportsSystemAudio)
         #else
-        #expect(viewModel.availableSourceKinds == [.microphone, .file])
+        #expect(!TranscriptionViewModel().supportsSystemAudio)
         #endif
+    }
+
+    @Test(arguments: [
+        (true, false, true),
+        (false, true, true),
+        (true, true, true),
+        (false, false, false),
+    ])
+    func canStartNeedsAnEnabledSource(mic: Bool, systemAudio: Bool, expected: Bool) {
+        let viewModel = TranscriptionViewModel()
+        viewModel.micEnabled = mic
+        viewModel.systemAudioEnabled = systemAudio
+        #if os(macOS)
+        #expect(viewModel.canStart == expected)
+        #else
+        #expect(viewModel.canStart == mic)
+        #endif
+    }
+
+    @Test(arguments: [TranscriptionStatus.recording, .preparingModel, .transcribingFile])
+    func cannotStartWhileRecordingOrBusy(status: TranscriptionStatus) {
+        let viewModel = TranscriptionViewModel()
+        viewModel.status = status
+        #expect(!viewModel.canStart)
     }
 
     @Test(arguments: [
@@ -28,7 +60,7 @@ struct TranscriptionViewModelTests {
 
     @Test func fullTextKeepsEnglishSpacingFromTheTranscriber() {
         let viewModel = TranscriptionViewModel()
-        viewModel.segments = [
+        viewModel.fileSegments = [
             TranscriptSegment(start: 0, end: 2, text: "Hello, this is a test."),
             TranscriptSegment(start: 2, end: 4, text: " The quick brown fox."),
         ]
@@ -37,20 +69,96 @@ struct TranscriptionViewModelTests {
 
     @Test func fullTextDoesNotInsertSpacesIntoJapanese() {
         let viewModel = TranscriptionViewModel()
-        viewModel.segments = [
+        viewModel.fileSegments = [
             TranscriptSegment(start: 0, end: 2, text: "こんにちは。"),
             TranscriptSegment(start: 2, end: 4, text: "これはテストです。"),
         ]
         #expect(viewModel.fullText == "こんにちは。これはテストです。")
     }
 
+    @Test func multiSourceTranscriptIsMergedAndLabeled() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [
+                TranscriptSegment(start: 0, end: 1, text: " Hello.", speaker: "You"),
+                TranscriptSegment(start: 4, end: 5, text: " Bye.", speaker: "You"),
+            ]),
+            makeIdleChannel(.systemAudio, label: "Zoom", segments: [
+                TranscriptSegment(start: 2, end: 3, text: " Hi.", speaker: "Zoom"),
+            ]),
+        ]
+        #expect(viewModel.segments.map(\.text) == [" Hello.", " Hi.", " Bye."])
+        #expect(viewModel.fullText == "You: Hello.\nZoom: Hi.\nYou: Bye.")
+        #expect(viewModel.hasSeparateSources)
+    }
+
+    @Test func liveChannelsReplaceTheFileTranscript() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.fileSegments = [TranscriptSegment(start: 0, end: 1, text: "file")]
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: "live")])]
+        #expect(viewModel.segments.map(\.text) == ["live"])
+        #expect(!viewModel.hasSeparateSources)
+    }
+
+    @Test func volatileLinesAreLabeledOnlyWithSeveralSources() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", volatileText: "Hel"),
+            makeIdleChannel(.systemAudio, label: "Zoom"),
+        ]
+        #expect(viewModel.volatileLines == [VolatileLine(label: "You", text: "Hel")])
+
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You", volatileText: "Hel")]
+        #expect(viewModel.volatileLines == [VolatileLine(label: nil, text: "Hel")])
+
+        viewModel.channels = []
+        viewModel.fileVolatileText = "fi"
+        #expect(viewModel.volatileLines == [VolatileLine(label: nil, text: "fi")])
+    }
+
+    @Test func exportFilesUseTheMergedAndPerSourceTranscripts() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: " Hello.", speaker: "You")]),
+            makeIdleChannel(.systemAudio, label: "Zoom", segments: [TranscriptSegment(start: 2, end: 3, text: " Hi.", speaker: "Zoom")]),
+        ]
+        let files = viewModel.exportFiles(.combinedAndSeparate, baseName: "T")
+        #expect(files == [
+            ExportFile(name: "T.txt", text: "[00:00] You: Hello.\n[00:02] Zoom: Hi."),
+            ExportFile(name: "T-You.txt", text: "[00:00] Hello."),
+            ExportFile(name: "T-Zoom.txt", text: "[00:02] Hi."),
+        ])
+    }
+
     @Test func clearRemovesTranscript() {
         let viewModel = TranscriptionViewModel()
-        viewModel.segments = [TranscriptSegment(start: 0, end: 1, text: "Hello")]
-        viewModel.volatileText = "wor"
+        viewModel.fileSegments = [TranscriptSegment(start: 0, end: 1, text: "Hello")]
+        viewModel.fileVolatileText = "wor"
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You")]
+        viewModel.channelWarning = "warning"
         viewModel.clear()
-        #expect(viewModel.segments.isEmpty)
-        #expect(viewModel.volatileText.isEmpty)
+        #expect(viewModel.fileSegments.isEmpty)
+        #expect(viewModel.fileVolatileText.isEmpty)
+        #expect(viewModel.channels.isEmpty)
+        #expect(viewModel.channelWarning == nil)
+    }
+
+    @Test func clearDoesNothingWhileRecording() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You")]
+        viewModel.status = .recording
+        viewModel.clear()
+        #expect(viewModel.channels.count == 1)
+    }
+
+    @Test(arguments: [
+        (ChannelKind.microphone, true, "The microphone was disconnected. Other sources are still being transcribed."),
+        (.microphone, false, "The microphone was disconnected."),
+        (.systemAudio, true, "System audio capture stopped. Other sources are still being transcribed."),
+        (.systemAudio, false, "System audio capture stopped."),
+    ])
+    func channelWarning(kind: ChannelKind, othersStillRunning: Bool, expected: String) {
+        #expect(TranscriptionViewModel.warning(for: kind, othersStillRunning: othersStillRunning) == expected)
     }
 
     @Test func consumeReplacesVolatileTextAndAppendsFinalResults() async {
@@ -64,10 +172,10 @@ struct TranscriptionViewModelTests {
 
         await viewModel.consume(stream)
 
-        #expect(viewModel.segments.map(\.text) == ["Hello world."])
-        #expect(viewModel.segments.first?.start == 0)
-        #expect(viewModel.segments.first?.end == 1.2)
-        #expect(viewModel.volatileText == " Next")
+        #expect(viewModel.fileSegments.map(\.text) == ["Hello world."])
+        #expect(viewModel.fileSegments.first?.start == 0)
+        #expect(viewModel.fileSegments.first?.end == 1.2)
+        #expect(viewModel.fileVolatileText == " Next")
     }
 
     @Test func consumeClearsVolatileTextWhenItBecomesFinal() async {
@@ -79,8 +187,8 @@ struct TranscriptionViewModelTests {
 
         await viewModel.consume(stream)
 
-        #expect(viewModel.segments.map(\.text) == ["こんにちは。"])
-        #expect(viewModel.volatileText.isEmpty)
+        #expect(viewModel.fileSegments.map(\.text) == ["こんにちは。"])
+        #expect(viewModel.fileVolatileText.isEmpty)
     }
 
     @Test func consumeReportsStreamErrors() async {
@@ -91,7 +199,7 @@ struct TranscriptionViewModelTests {
 
         await viewModel.consume(stream)
 
-        #expect(viewModel.segments.map(\.text) == ["Partial."])
+        #expect(viewModel.fileSegments.map(\.text) == ["Partial."])
         #expect(viewModel.status == .failed(TranscriptionError.unsupportedLocale.localizedDescription))
     }
 }

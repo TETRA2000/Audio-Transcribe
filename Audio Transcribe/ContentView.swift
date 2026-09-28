@@ -30,9 +30,9 @@ struct ContentView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Source", selection: $viewModel.sourceKind) {
-                ForEach(viewModel.availableSourceKinds) { source in
-                    Text(source.displayName).tag(source)
+            Picker("Mode", selection: $viewModel.mode) {
+                ForEach(CaptureMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -53,8 +53,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        switch viewModel.sourceKind {
-        case .microphone, .systemAudio:
+        switch viewModel.mode {
+        case .live:
             Button {
                 Task {
                     if viewModel.isRecording {
@@ -68,7 +68,7 @@ struct ContentView: View {
                       systemImage: viewModel.isRecording ? "stop.circle.fill" : "record.circle")
             }
             .tint(viewModel.isRecording ? .red : .accentColor)
-            .disabled(viewModel.isBusy)
+            .disabled(viewModel.isBusy || (!viewModel.isRecording && !viewModel.canStart))
         case .file:
             Button {
                 isImportingFile = true
@@ -138,11 +138,13 @@ struct ContentView: View {
                         transcriptRow(segment)
                             .id(segment.id)
                     }
-                    if !viewModel.volatileText.isEmpty {
-                        Text(viewModel.volatileText)
+                    ForEach(viewModel.volatileLines) { line in
+                        Text(line.text)
                             .foregroundStyle(.secondary)
-                            .id("volatile")
                     }
+                    Color.clear
+                        .frame(height: 0)
+                        .id("volatile")
                 }
                 .padding()
             }
@@ -151,7 +153,7 @@ struct ContentView: View {
                     proxy.scrollTo(viewModel.segments.last?.id, anchor: .bottom)
                 }
             }
-            .onChange(of: viewModel.volatileText) {
+            .onChange(of: viewModel.volatileLines) {
                 proxy.scrollTo("volatile", anchor: .bottom)
             }
         }
