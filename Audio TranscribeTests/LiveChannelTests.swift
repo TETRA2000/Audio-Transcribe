@@ -74,13 +74,28 @@ struct LiveChannelTests {
         let transcriber = FakeTranscriber()
         let channel = makeChannel(FakeSource(), transcriber)
         try await channel.start(language: .english, sessionStart: Date(), labelSegments: false)
-        await transcriber.emit(TranscriptUpdate(text: "Hi.", start: 0, end: 1, isFinal: true))
+        await transcriber.gateFinish()
 
-        async let first: Void = channel.stop()
-        try await channel.stop()
+        // Whichever of these two calls actually performs the finish blocks inside the gate below; the other
+        // must wait for that same finish rather than returning early. Each records whether the gate had
+        // already been released at the moment its own `stop()` returned, so a caller that (under the bug)
+        // returned before the shared finish completed is caught red-handed instead of racing past unnoticed.
+        var released = false
+        async let firstReturnedEarly: Bool = {
+            try await channel.stop()
+            return !released
+        }()
+        async let secondReturnedEarly: Bool = {
+            try await channel.stop()
+            return !released
+        }()
 
-        #expect(channel.segments.count == 1)
-        try await first
+        for _ in 0..<10 { await Task.yield() }
+        released = true
+        await transcriber.releaseFinish()
+
+        #expect(try await !firstReturnedEarly)
+        #expect(try await !secondReturnedEarly)
     }
 
     @Test func stoppingDoesNotReportAnUnexpectedEnd() async throws {

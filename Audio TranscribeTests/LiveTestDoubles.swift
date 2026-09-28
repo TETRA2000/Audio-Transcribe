@@ -12,6 +12,8 @@ actor FakeTranscriber: LiveTranscribing {
     private var continuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation?
     private(set) var finishCount = 0
     private(set) var appendedBufferCount = 0
+    private var isFinishGated = false
+    private var finishGateContinuation: CheckedContinuation<Void, Never>?
 
     init(startError: Error? = nil) {
         self.startError = startError
@@ -24,11 +26,30 @@ actor FakeTranscriber: LiveTranscribing {
         return stream
     }
 
+    /// Mirrors `TranscriptionEngine.appendLiveAudio`, which silently drops buffers once
+    /// `finishLiveTranscription()` has cleared its analysis state.
     func appendLiveAudio(_ buffer: AVAudioPCMBuffer) {
+        guard finishCount == 0 else { return }
         appendedBufferCount += 1
     }
 
-    func finishLiveTranscription() throws {
+    /// Makes the *next* `finishLiveTranscription()` call suspend until `releaseFinish()` is called, so a test
+    /// can deterministically control exactly when a finish completes (e.g. to prove a second caller waits for
+    /// an already-in-flight finish rather than returning early).
+    func gateFinish() {
+        isFinishGated = true
+    }
+
+    func releaseFinish() {
+        isFinishGated = false
+        finishGateContinuation?.resume()
+        finishGateContinuation = nil
+    }
+
+    func finishLiveTranscription() async throws {
+        if isFinishGated {
+            await withCheckedContinuation { finishGateContinuation = $0 }
+        }
         finishCount += 1
         continuation?.finish()
         continuation = nil
