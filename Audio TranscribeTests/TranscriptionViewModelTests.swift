@@ -191,6 +191,27 @@ struct TranscriptionViewModelTests {
         #expect(viewModel.fileVolatileText.isEmpty)
     }
 
+    @Test(arguments: [
+        (TranscriptionStatus.failed("boom"), true, TranscriptionStatus.failed("boom")),
+        (.failed("boom"), false, .failed("boom")),
+        (.preparingModel, true, .recording),
+        (.preparingModel, false, .idle),
+        (.idle, true, .recording),
+        (.idle, false, .idle),
+    ])
+    func statusAfterStartingNeverOverwritesAFailure(current: TranscriptionStatus, anyChannelRunning: Bool, expected: TranscriptionStatus) {
+        #expect(TranscriptionViewModel.statusAfterStarting(current: current, anyChannelRunning: anyChannelRunning) == expected)
+    }
+
+    @Test(arguments: [
+        (TranscriptionStatus.failed("boom"), TranscriptionStatus.failed("boom")),
+        (.recording, .idle),
+        (.idle, .idle),
+    ])
+    func statusAfterStoppingNeverOverwritesAFailure(current: TranscriptionStatus, expected: TranscriptionStatus) {
+        #expect(TranscriptionViewModel.statusAfterStopping(current: current) == expected)
+    }
+
     @Test func consumeReportsStreamErrors() async {
         let viewModel = TranscriptionViewModel()
         let (stream, continuation) = AsyncThrowingStream.makeStream(of: TranscriptUpdate.self)

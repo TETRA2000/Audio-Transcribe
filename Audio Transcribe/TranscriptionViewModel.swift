@@ -124,6 +124,10 @@ final class TranscriptionViewModel {
     func start() async {
         guard mode == .live, canStart else { return }
         clear()
+        // Marks the view model busy before the first `await` below, so a second Start tap during the permission
+        // prompt or asset preparation sees `canStart == false` instead of racing this call to build its own
+        // channels around the same shared `MicrophoneSource`/`SystemAudioSource`.
+        status = .preparingModel
 
         if micEnabled {
             guard await AVAudioApplication.requestRecordPermission() else {
@@ -142,7 +146,7 @@ final class TranscriptionViewModel {
                 sessionStart: Date(),
                 labelSegments: newChannels.count > 1
             )
-            status = newChannels.contains(where: \.isRunning) ? .recording : .idle
+            status = Self.statusAfterStarting(current: status, anyChannelRunning: newChannels.contains(where: \.isRunning))
         } catch {
             channels = []
             status = .failed(error.localizedDescription)
@@ -152,10 +156,24 @@ final class TranscriptionViewModel {
     func stop() async {
         do {
             try await LiveChannel.stopAll(channels)
-            status = .idle
+            status = Self.statusAfterStopping(current: status)
         } catch {
             status = .failed(error.localizedDescription)
         }
+    }
+
+    /// The status to report once `startAll` finishes: unless a channel already failed while `startAll` was
+    /// still awaiting (`onFailure` sets `.failed` from underneath this call), reflect whether anything is running.
+    static func statusAfterStarting(current: TranscriptionStatus, anyChannelRunning: Bool) -> TranscriptionStatus {
+        if case .failed = current { return current }
+        return anyChannelRunning ? .recording : .idle
+    }
+
+    /// The status to report once `stopAll` finishes: unless a channel already failed while `stopAll` was still
+    /// awaiting, stopping always ends in `.idle`.
+    static func statusAfterStopping(current: TranscriptionStatus) -> TranscriptionStatus {
+        if case .failed = current { return current }
+        return .idle
     }
 
     func transcribe(fileURL: URL) async {
