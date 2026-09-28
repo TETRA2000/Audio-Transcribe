@@ -10,6 +10,8 @@ struct ContentView: View {
     @State private var viewModel = TranscriptionViewModel()
     @State private var isImportingFile = false
 
+    private var isLocked: Bool { viewModel.isRecording || viewModel.isBusy }
+
     var body: some View {
         VStack(spacing: 0) {
             controls
@@ -19,7 +21,7 @@ struct ContentView: View {
             transcriptView
         }
         #if os(macOS)
-        .frame(minWidth: 480, minHeight: 400)
+        .frame(minWidth: 520, minHeight: 440)
         #endif
         .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.audio, .movie]) { result in
             if case .success(let url) = result {
@@ -36,7 +38,12 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .disabled(viewModel.isRecording || viewModel.isBusy)
+            .disabled(isLocked)
+
+            if viewModel.mode == .live {
+                LiveSourcesView(viewModel: viewModel)
+                    .disabled(isLocked)
+            }
 
             Picker("Language", selection: $viewModel.language) {
                 ForEach(TranscriptionLanguage.allCases) { language in
@@ -44,7 +51,7 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .disabled(viewModel.isRecording || viewModel.isBusy)
+            .disabled(isLocked)
 
             actionButton
         }
@@ -79,8 +86,24 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private var statusBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            statusContent
+            if let warning = viewModel.channelWarning {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.caption)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
         switch viewModel.status {
         case .idle:
             EmptyView()
@@ -139,8 +162,13 @@ struct ContentView: View {
                             .id(segment.id)
                     }
                     ForEach(viewModel.volatileLines) { line in
-                        Text(line.text)
-                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if let label = line.label {
+                                speakerTag(label)
+                            }
+                            Text(line.text.trimmingCharacters(in: .whitespaces))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Color.clear
                         .frame(height: 0)
@@ -159,34 +187,54 @@ struct ContentView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if !viewModel.segments.isEmpty {
-                HStack {
-                    Button("Clear", role: .destructive) {
-                        viewModel.clear()
-                    }
-                    Spacer()
-                    Button {
-                        copyToClipboard(viewModel.fullText)
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    ShareLink(item: viewModel.fullText) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                }
-                .padding()
-                .background(.bar)
+                transcriptActions
             }
         }
     }
 
+    private var transcriptActions: some View {
+        HStack {
+            if !viewModel.isRecording {
+                Button("Clear", role: .destructive) {
+                    viewModel.clear()
+                }
+            }
+            Spacer()
+            Button {
+                copyToClipboard(viewModel.fullText)
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            ShareLink(item: viewModel.fullText) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        .padding()
+        .background(.bar)
+    }
+
     private func transcriptRow(_ segment: TranscriptSegment) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(segment.formattedStart)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .leading)
+            if let speaker = segment.speaker {
+                speakerTag(speaker)
+            }
             Text(segment.text.trimmingCharacters(in: .whitespaces))
         }
+    }
+
+    /// A small colored label: the first source (the microphone when enabled) uses the accent color, others orange.
+    private func speakerTag(_ speaker: String) -> some View {
+        let color: Color = speaker == viewModel.channels.first?.label ? .accentColor : .orange
+        return Text(speaker)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15), in: .capsule)
     }
 
     private func copyToClipboard(_ text: String) {
