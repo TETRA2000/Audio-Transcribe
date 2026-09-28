@@ -212,6 +212,20 @@ final class TranscriptionViewModel {
         )
     }
 
+    /// Writes the export files for `kind` into a folder the user picked. Existing files are never overwritten.
+    func export(_ kind: ExportKind, toFolder folder: URL, date: Date = Date()) {
+        let accessed = folder.startAccessingSecurityScopedResource()
+        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
+        do {
+            _ = try TranscriptExporter.write(
+                exportFiles(kind, baseName: TranscriptExporter.defaultBaseName(for: date)),
+                to: folder
+            )
+        } catch {
+            status = .failed(error.localizedDescription)
+        }
+    }
+
     static func warning(for kind: ChannelKind, othersStillRunning: Bool) -> String {
         let message = switch kind {
         case .microphone: "The microphone was disconnected."

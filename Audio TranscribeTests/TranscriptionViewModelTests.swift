@@ -223,4 +223,32 @@ struct TranscriptionViewModelTests {
         #expect(viewModel.fileSegments.map(\.text) == ["Partial."])
         #expect(viewModel.status == .failed(TranscriptionError.unsupportedLocale.localizedDescription))
     }
+
+    @Test func exportToFolderWritesSeparateFiles() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let date = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 27, hour: 14, minute: 5)))
+
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: " Hello.", speaker: "You")]),
+            makeIdleChannel(.systemAudio, label: "Zoom", segments: [TranscriptSegment(start: 2, end: 3, text: " Hi.", speaker: "Zoom")]),
+        ]
+        viewModel.export(.separate, toFolder: folder, date: date)
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)).sorted()
+        #expect(names == ["Transcript 2026-09-27 14.05-You.txt", "Transcript 2026-09-27 14.05-Zoom.txt"])
+        #expect(viewModel.status == .idle)
+    }
+
+    @Test func exportFailureIsReported() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: "Hi")])]
+        viewModel.export(.combined, toFolder: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)"))
+        guard case .failed = viewModel.status else {
+            Issue.record("Expected a failed status, got \(viewModel.status)")
+            return
+        }
+    }
 }

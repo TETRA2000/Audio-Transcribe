@@ -7,8 +7,24 @@ import UIKit
 #endif
 
 struct ContentView: View {
+    private enum ImportPurpose {
+        case audioFile
+        case exportFolder(ExportKind)
+
+        var contentTypes: [UTType] {
+            switch self {
+            case .audioFile: [.audio, .movie]
+            case .exportFolder: [.folder]
+            }
+        }
+    }
+
     @State private var viewModel = TranscriptionViewModel()
-    @State private var isImportingFile = false
+    @State private var isImporting = false
+    @State private var importPurpose = ImportPurpose.audioFile
+    @State private var isExportingFile = false
+    @State private var exportDocument = PlainTextDocument(text: "")
+    @State private var exportFileName = ""
 
     private var isLocked: Bool { viewModel.isRecording || viewModel.isBusy }
 
@@ -23,9 +39,23 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 440)
         #endif
-        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.audio, .movie]) { result in
-            if case .success(let url) = result {
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: importPurpose.contentTypes) { result in
+            guard case .success(let url) = result else { return }
+            switch importPurpose {
+            case .audioFile:
                 Task { await viewModel.transcribe(fileURL: url) }
+            case .exportFolder(let kind):
+                viewModel.export(kind, toFolder: url)
+            }
+        }
+        .fileExporter(
+            isPresented: $isExportingFile,
+            document: exportDocument,
+            contentType: .plainText,
+            defaultFilename: exportFileName
+        ) { result in
+            if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled {
+                viewModel.status = .failed(error.localizedDescription)
             }
         }
     }
@@ -78,7 +108,8 @@ struct ContentView: View {
             .disabled(viewModel.isBusy || (!viewModel.isRecording && !viewModel.canStart))
         case .file:
             Button {
-                isImportingFile = true
+                importPurpose = .audioFile
+                isImporting = true
             } label: {
                 Label("Open File…", systemImage: "folder")
             }
@@ -200,6 +231,9 @@ struct ContentView: View {
                 }
             }
             Spacer()
+            if !viewModel.isRecording {
+                exportControl
+            }
             Button {
                 copyToClipboard(viewModel.fullText)
             } label: {
@@ -211,6 +245,39 @@ struct ContentView: View {
         }
         .padding()
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private var exportControl: some View {
+        if viewModel.hasSeparateSources {
+            Menu {
+                Button("Combined…") { exportCombinedFile() }
+                Button("Separate…") { chooseExportFolder(for: .separate) }
+                Button("Combined + Separate…") { chooseExportFolder(for: .combinedAndSeparate) }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.down")
+            }
+            .fixedSize()
+        } else {
+            Button {
+                exportCombinedFile()
+            } label: {
+                Label("Export…", systemImage: "square.and.arrow.down")
+            }
+        }
+    }
+
+    private func exportCombinedFile() {
+        let baseName = TranscriptExporter.defaultBaseName(for: Date())
+        guard let file = viewModel.exportFiles(.combined, baseName: baseName).first else { return }
+        exportDocument = PlainTextDocument(text: file.text)
+        exportFileName = (file.name as NSString).deletingPathExtension
+        isExportingFile = true
+    }
+
+    private func chooseExportFolder(for kind: ExportKind) {
+        importPurpose = .exportFolder(kind)
+        isImporting = true
     }
 
     private func transcriptRow(_ segment: TranscriptSegment) -> some View {
