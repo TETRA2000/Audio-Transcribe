@@ -2,17 +2,15 @@ import Foundation
 import AVFoundation
 import Observation
 
-enum TranscriptionSource: String, CaseIterable, Identifiable, Hashable {
-    case microphone
-    case systemAudio
+enum CaptureMode: String, CaseIterable, Identifiable, Hashable {
+    case live
     case file
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .microphone: "Microphone"
-        case .systemAudio: "System Audio"
+        case .live: "Live"
         case .file: "File"
         }
     }
@@ -26,29 +24,101 @@ enum TranscriptionStatus: Equatable {
     case failed(String)
 }
 
+/// In-progress text for one source. `label` is set only when several sources are live.
+struct VolatileLine: Identifiable, Equatable {
+    let label: String?
+    let text: String
+
+    var id: String { label ?? "" }
+}
+
 @MainActor
 @Observable
 final class TranscriptionViewModel {
-    var sourceKind: TranscriptionSource = .microphone
+    var mode: CaptureMode = .live
     var language: TranscriptionLanguage = .english
     var status: TranscriptionStatus = .idle
-    var segments: [TranscriptSegment] = []
-    var volatileText: String = ""
+
+    var micEnabled = true
+    /// The chosen input device's UID (macOS). `nil` means the system default.
+    var selectedMicUID: String?
+    var systemAudioEnabled = false
+    var systemAudioTarget: SystemAudioTarget = .allAudio
+
+    /// The live session's channels. They are kept after stopping so the transcript can still be read and exported.
+    var channels: [LiveChannel] = []
+    /// The last file transcription.
+    var fileSegments: [TranscriptSegment] = []
+    var fileVolatileText = ""
+    /// Shown when one source of a live session stops by itself, such as an unplugged microphone.
+    var channelWarning: String?
     /// Download progress for the on-device language model, when a download is needed.
     var modelDownloadProgress: Progress?
 
-    var availableSourceKinds: [TranscriptionSource] {
+    var supportsSystemAudio: Bool {
         #if os(macOS)
-        TranscriptionSource.allCases
+        true
         #else
-        [.microphone, .file]
+        false
         #endif
     }
 
-    /// The transcript as plain text. Segments are concatenated as-is: the transcriber already includes
-    /// leading spaces where the language needs them (English) and none where it doesn't (Japanese).
+    var canStart: Bool {
+        let hasSource = micEnabled || (supportsSystemAudio && systemAudioEnabled)
+        return hasSource && !isRecording && !isBusy
+    }
+
+    /// The transcript on one timeline: the live channels merged by time, or else the file transcript.
+    ///
+    /// The view reads this several times per render, and in-progress text re-renders it many times a second,
+    /// so the merge is cached. Channels only ever append segments, so a channel's segment count and last
+    /// segment identify its contents.
+    var segments: [TranscriptSegment] {
+        guard !channels.isEmpty else { return fileSegments }
+        let key = channels.map { MergeKey(channel: ObjectIdentifier($0), count: $0.segments.count, lastID: $0.segments.last?.id) }
+        if let mergeCache, mergeCache.key == key {
+            return mergeCache.segments
+        }
+        let merged = TranscriptSegment.merged(channels.map(\.segments))
+        mergeCache = (key, merged)
+        return merged
+    }
+
+    private struct MergeKey: Equatable {
+        let channel: ObjectIdentifier
+        let count: Int
+        let lastID: UUID?
+    }
+
+    @ObservationIgnored private var mergeCache: (key: [MergeKey], segments: [TranscriptSegment])?
+
+    var volatileLines: [VolatileLine] {
+        if channels.isEmpty {
+            return fileVolatileText.isEmpty ? [] : [VolatileLine(label: nil, text: fileVolatileText)]
+        }
+        let labeled = channels.count > 1
+        return channels
+            .filter { !$0.volatileText.isEmpty }
+            .map { VolatileLine(label: labeled ? $0.label : nil, text: $0.volatileText) }
+    }
+
+    /// Whether the transcript came from several sources, so it can be exported as separate files.
+    var hasSeparateSources: Bool { channels.count > 1 }
+
+    /// The transcript as plain text for Copy and Share. A single-source transcript is concatenated as-is: the
+    /// transcriber already includes leading spaces where the language needs them (English) and none where it doesn't
+    /// (Japanese). A multi-source transcript puts each segment on its own `Speaker: text` line.
     var fullText: String {
-        segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        let segments = self.segments
+        if segments.contains(where: { $0.speaker != nil }) {
+            return segments
+                .map { segment in
+                    let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return segment.speaker.map { "\($0): \(text)" } ?? text
+                }
+                .joined(separator: "\n")
+        }
+        return segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var isRecording: Bool {
@@ -63,93 +133,70 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Prepares language assets and transcribes files. Each live channel has its own engine.
     private let engine = TranscriptionEngine()
     private let microphoneSource = MicrophoneSource()
     #if os(macOS)
     private let systemAudioSource = SystemAudioSource()
     #endif
-    private var feedTask: Task<Void, Never>?
-    private var resultsTask: Task<Void, Never>?
 
     func start() async {
-        guard sourceKind != .file else { return }
-        segments = []
-        volatileText = ""
+        guard mode == .live, canStart else { return }
+        clear()
+        // Marks the view model busy before the first `await` below, so a second Start tap during the permission
+        // prompt or asset preparation sees `canStart == false` instead of racing this call to build its own
+        // channels around the same shared `MicrophoneSource`/`SystemAudioSource`.
+        status = .preparingModel
 
-        if sourceKind == .microphone {
+        if micEnabled {
             guard await AVAudioApplication.requestRecordPermission() else {
                 status = .failed("Microphone access was denied.")
                 return
             }
         }
 
+        let newChannels = makeChannels()
         do {
             try await prepareAssets()
-
-            let resultsStream = try await engine.startLiveTranscription(language: language)
-            resultsTask = Task { [weak self] in
-                await self?.consume(resultsStream)
-            }
-
-            let bufferStream: AsyncStream<AVAudioPCMBuffer>
-            switch sourceKind {
-            case .microphone:
-                bufferStream = try microphoneSource.start()
-            case .systemAudio:
-                #if os(macOS)
-                bufferStream = try systemAudioSource.start()
-                #else
-                status = .failed("System audio isn't available on this platform.")
-                return
-                #endif
-            case .file:
-                return
-            }
-
-            status = .recording
-            feedTask = Task { [weak self] in
-                guard let self else { return }
-                for await buffer in bufferStream {
-                    await self.engine.appendLiveAudio(buffer)
-                }
-            }
+            channels = newChannels
+            try await LiveChannel.startAll(
+                newChannels,
+                language: language,
+                sessionStart: Date(),
+                labelSegments: newChannels.count > 1
+            )
+            status = Self.statusAfterStarting(current: status, anyChannelRunning: newChannels.contains(where: \.isRunning))
         } catch {
-            microphoneSource.stop()
-            #if os(macOS)
-            systemAudioSource.stop()
-            #endif
-            try? await engine.finishLiveTranscription()
+            channels = []
             status = .failed(error.localizedDescription)
         }
     }
 
     func stop() async {
-        feedTask?.cancel()
-        feedTask = nil
-
-        switch sourceKind {
-        case .microphone:
-            microphoneSource.stop()
-        case .systemAudio:
-            #if os(macOS)
-            systemAudioSource.stop()
-            #endif
-        case .file:
-            break
-        }
-
         do {
-            try await engine.finishLiveTranscription()
+            try await LiveChannel.stopAll(channels)
+            status = Self.statusAfterStopping(current: status)
         } catch {
             status = .failed(error.localizedDescription)
-            return
         }
-        status = .idle
+    }
+
+    /// The status to report once `startAll` finishes: unless a channel already failed while `startAll` was
+    /// still awaiting (`onFailure` sets `.failed` from underneath this call), reflect whether anything is running.
+    static func statusAfterStarting(current: TranscriptionStatus, anyChannelRunning: Bool) -> TranscriptionStatus {
+        if case .failed = current { return current }
+        return anyChannelRunning ? .recording : .idle
+    }
+
+    /// The status to report once `stopAll` finishes: unless a channel already failed while `stopAll` was still
+    /// awaiting, stopping always ends in `.idle`.
+    static func statusAfterStopping(current: TranscriptionStatus) -> TranscriptionStatus {
+        if case .failed = current { return current }
+        return .idle
     }
 
     func transcribe(fileURL: URL) async {
-        segments = []
-        volatileText = ""
+        clear()
 
         let accessed = fileURL.startAccessingSecurityScopedResource()
         defer { if accessed { fileURL.stopAccessingSecurityScopedResource() } }
@@ -166,9 +213,106 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Clears the transcript. Does nothing while recording, so running channels are never dropped.
     func clear() {
-        segments = []
-        volatileText = ""
+        guard !isRecording else { return }
+        channels = []
+        fileSegments = []
+        fileVolatileText = ""
+        channelWarning = nil
+    }
+
+    func exportFiles(_ kind: ExportKind, baseName: String) -> [ExportFile] {
+        TranscriptExporter.files(
+            kind,
+            baseName: baseName,
+            combined: segments,
+            channels: channels.map { (label: $0.label, segments: $0.segments) }
+        )
+    }
+
+    /// Writes the export files for `kind` into a folder the user picked. Existing files are never overwritten.
+    func export(_ kind: ExportKind, toFolder folder: URL, date: Date = Date()) {
+        let accessed = folder.startAccessingSecurityScopedResource()
+        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
+        do {
+            _ = try TranscriptExporter.write(
+                exportFiles(kind, baseName: TranscriptExporter.defaultBaseName(for: date)),
+                to: folder
+            )
+        } catch {
+            status = .failed(error.localizedDescription)
+        }
+    }
+
+    static func warning(for kind: ChannelKind, othersStillRunning: Bool) -> String {
+        let message = switch kind {
+        case .microphone: "The microphone was disconnected."
+        case .systemAudio: "System audio capture stopped."
+        }
+        return othersStillRunning ? "\(message) Other sources are still being transcribed." : message
+    }
+
+    private func makeChannels() -> [LiveChannel] {
+        var channels: [LiveChannel] = []
+        if micEnabled {
+            #if os(macOS)
+            let deviceID = AudioInputDevices.resolve(uid: selectedMicUID, in: AudioInputDevices.all())
+            #else
+            let deviceID: UInt32? = nil
+            #endif
+            let microphone = microphoneSource
+            channels.append(LiveChannel(
+                kind: .microphone,
+                label: "You",
+                source: LiveAudioSource(
+                    start: { try microphone.start(deviceID: deviceID) },
+                    stop: { microphone.stop() }
+                ),
+                transcriber: TranscriptionEngine()
+            ))
+        }
+        #if os(macOS)
+        if systemAudioEnabled {
+            let systemAudio = systemAudioSource
+            let target = systemAudioTarget
+            channels.append(LiveChannel(
+                kind: .systemAudio,
+                label: target.label,
+                source: LiveAudioSource(
+                    start: { try systemAudio.start(target: target) },
+                    stop: { systemAudio.stop() }
+                ),
+                transcriber: TranscriptionEngine()
+            ))
+        }
+        #endif
+        for channel in channels {
+            channel.onUnexpectedEnd = { [weak self, weak channel] in
+                guard let self, let channel else { return }
+                self.channelDidEndUnexpectedly(channel)
+            }
+            channel.onFailure = { [weak self] error in
+                self?.liveTranscriptionDidFail(error)
+            }
+        }
+        return channels
+    }
+
+    private func channelDidEndUnexpectedly(_ channel: LiveChannel) {
+        let othersStillRunning = channels.contains(where: \.isRunning)
+        channelWarning = Self.warning(for: channel.kind, othersStillRunning: othersStillRunning)
+        if !othersStillRunning, isRecording {
+            status = .idle
+        }
+    }
+
+    private func liveTranscriptionDidFail(_ error: Error) {
+        status = .failed(error.localizedDescription)
+        let channels = self.channels
+        Task {
+            try? await LiveChannel.stopAll(channels)
+        }
     }
 
     private func prepareAssets() async throws {
@@ -181,14 +325,15 @@ final class TranscriptionViewModel {
         }
     }
 
+    /// Collects a file transcription's results.
     func consume(_ stream: AsyncThrowingStream<TranscriptUpdate, Error>) async {
         do {
             for try await update in stream {
                 if update.isFinal {
-                    segments.append(TranscriptSegment(start: update.start, end: update.end, text: update.text))
-                    volatileText = ""
+                    fileSegments.append(TranscriptSegment(start: update.start, end: update.end, text: update.text))
+                    fileVolatileText = ""
                 } else {
-                    volatileText = update.text
+                    fileVolatileText = update.text
                 }
             }
         } catch {

@@ -8,6 +8,7 @@ nonisolated enum SystemAudioCaptureError: LocalizedError {
     case formatUnavailable(OSStatus)
     case ioProcCreationFailed(OSStatus)
     case startFailed(OSStatus)
+    case appNotRunning(String)
 
     var errorDescription: String? {
         switch self {
@@ -21,11 +22,13 @@ nonisolated enum SystemAudioCaptureError: LocalizedError {
             "Couldn't register an audio callback (status \(status))."
         case .startFailed(let status):
             "Couldn't start system audio capture (status \(status))."
+        case .appNotRunning(let name):
+            "\(name) isn't running."
         }
     }
 }
 
-/// Captures all system audio output (everything the Mac is currently playing) using a
+/// Captures system audio output (everything the Mac is playing, or one app's audio) using a
 /// Core Audio process tap, and exposes it as a stream of PCM buffers.
 @MainActor
 final class SystemAudioSource {
@@ -33,10 +36,17 @@ final class SystemAudioSource {
     private var aggregateDeviceID: AudioObjectID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var continuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    /// Watches the process list while an app is captured, so helper processes that start later join the tap.
+    private var processListListener: CoreAudioListener?
 
-    func start() throws -> AsyncStream<AVAudioPCMBuffer> {
-        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
-        tapDescription.isPrivate = true
+    func start(target: SystemAudioTarget = .allAudio) throws -> AsyncStream<AVAudioPCMBuffer> {
+        var processObjectIDs: [AudioObjectID] = []
+        if case .app(let bundleID, let name) = target {
+            // Resolve at start so helper processes launched since the menu was shown are included.
+            processObjectIDs = AudioApps.processObjectIDs(for: bundleID)
+            guard !processObjectIDs.isEmpty else { throw SystemAudioCaptureError.appNotRunning(name) }
+        }
+        let tapDescription = Self.tapDescription(for: target, processObjectIDs: processObjectIDs)
 
         var newTapID = AudioObjectID(kAudioObjectUnknown)
         var status = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
@@ -98,11 +108,57 @@ final class SystemAudioSource {
             throw SystemAudioCaptureError.startFailed(status)
         }
 
+        if case .app(let bundleID, _) = target {
+            observeProcesses(of: bundleID, target: target, tapDescription: tapDescription)
+        }
+
         return stream
     }
 
     func stop() {
         tearDown()
+    }
+
+    /// A private stereo tap of all system audio, or a mixdown of just `processObjectIDs` for an app target.
+    /// Pass `uuid` to describe an existing tap, so an aggregate device that refers to it by UUID stays valid.
+    static func tapDescription(
+        for target: SystemAudioTarget,
+        processObjectIDs: [AudioObjectID],
+        uuid: UUID? = nil
+    ) -> CATapDescription {
+        let description = switch target {
+        case .allAudio: CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        case .app: CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
+        }
+        description.isPrivate = true
+        if let uuid { description.uuid = uuid }
+        return description
+    }
+
+    /// The process list a live app tap should switch to, or `nil` to leave it as is: when the same processes
+    /// resolved again (in any order), or when none did (the app may be between processes; keep what we have).
+    static func updatedProcessList(current: [AudioObjectID], resolved: [AudioObjectID]) -> [AudioObjectID]? {
+        guard !resolved.isEmpty, Set(resolved) != Set(current) else { return nil }
+        return resolved
+    }
+
+    /// Keeps the tap's process list in step with the app's processes. Browsers often play a call's audio from a
+    /// helper process created after recording started; without this, that audio would never be captured.
+    private func observeProcesses(of bundleID: String, target: SystemAudioTarget, tapDescription: CATapDescription) {
+        var current = tapDescription.processes
+        let uuid = tapDescription.uuid
+        processListListener = CoreAudioListener(selectors: [kAudioHardwarePropertyProcessObjectList]) { [weak self] in
+            guard let self, self.tapID != AudioObjectID(kAudioObjectUnknown),
+                  let processes = Self.updatedProcessList(current: current, resolved: AudioApps.processObjectIDs(for: bundleID))
+            else { return }
+            var description = Self.tapDescription(for: target, processObjectIDs: processes, uuid: uuid)
+            var address = CoreAudioProperty.address(kAudioTapPropertyDescription)
+            let status = AudioObjectSetPropertyData(
+                self.tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), &description
+            )
+            // On failure, keep `current` so the next process-list change tries again.
+            if status == noErr { current = processes }
+        }
     }
 
     nonisolated static func copyBuffer(_ bufferList: UnsafePointer<AudioBufferList>, format: AVAudioFormat) -> AVAudioPCMBuffer? {
@@ -120,6 +176,7 @@ final class SystemAudioSource {
     }
 
     private func tearDown() {
+        processListListener = nil
         if let ioProcID {
             AudioDeviceStop(aggregateDeviceID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateDeviceID, ioProcID)

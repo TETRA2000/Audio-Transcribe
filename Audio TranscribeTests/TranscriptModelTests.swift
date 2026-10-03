@@ -36,3 +36,36 @@ struct TranscriptSegmentTests {
         #expect(segment.formattedStart == expected)
     }
 }
+
+struct TranscriptMergeTests {
+    @Test func segmentsHaveNoSpeakerByDefault() {
+        #expect(TranscriptSegment(start: 0, end: 1, text: "Hi").speaker == nil)
+    }
+
+    @Test func mergeInterleavesChannelsByStartTime() {
+        let mic = [
+            TranscriptSegment(start: 0, end: 2, text: "a", speaker: "You"),
+            TranscriptSegment(start: 10, end: 12, text: "c", speaker: "You"),
+        ]
+        let app = [TranscriptSegment(start: 5, end: 6, text: "b", speaker: "Zoom")]
+
+        let merged = TranscriptSegment.merged([mic, app])
+
+        #expect(merged.map(\.text) == ["a", "b", "c"])
+        #expect(merged.map(\.speaker) == ["You", "Zoom", "You"])
+    }
+
+    @Test func mergeKeepsChannelOrderForTies() {
+        let mic = [TranscriptSegment(start: 3, end: 4, text: "mic")]
+        let app = [
+            TranscriptSegment(start: 3, end: 4, text: "app 1"),
+            TranscriptSegment(start: 3, end: 4, text: "app 2"),
+        ]
+        #expect(TranscriptSegment.merged([mic, app]).map(\.text) == ["mic", "app 1", "app 2"])
+    }
+
+    @Test func mergeOfNothingIsEmpty() {
+        #expect(TranscriptSegment.merged([]).isEmpty)
+        #expect(TranscriptSegment.merged([[], []]).isEmpty)
+    }
+}
