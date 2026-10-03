@@ -257,11 +257,7 @@ final class TranscriptionViewModel {
         var channels: [LiveChannel] = []
         if micEnabled {
             #if os(macOS)
-            let deviceID = AudioInputDevices.resolve(
-                uid: selectedMicUID,
-                in: AudioInputDevices.all(),
-                defaultID: AudioInputDevices.defaultDeviceID()
-            )
+            let deviceID = AudioInputDevices.resolve(uid: selectedMicUID, in: AudioInputDevices.all())
             #else
             let deviceID: UInt32? = nil
             #endif

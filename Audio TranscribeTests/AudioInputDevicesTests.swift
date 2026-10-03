@@ -8,16 +8,17 @@ struct AudioInputDevicesTests {
     private let usb = AudioInputDevice(id: 20, uid: "AppleUSBAudioEngine:Blue:Yeti", name: "Yeti")
 
     @Test func resolvesTheSelectedDevice() {
-        #expect(AudioInputDevices.resolve(uid: usb.uid, in: [builtIn, usb], defaultID: builtIn.id) == usb.id)
+        #expect(AudioInputDevices.resolve(uid: usb.uid, in: [builtIn, usb]) == usb.id)
     }
 
-    @Test func fallsBackToTheDefaultWhenTheSelectedDeviceIsGone() {
-        #expect(AudioInputDevices.resolve(uid: usb.uid, in: [builtIn], defaultID: builtIn.id) == builtIn.id)
+    /// `nil` means "don't pin a device": the engine then follows the system default input, which is what
+    /// "System Default" promises. Explicitly pinning the default device broke capture from AirPods.
+    @Test func followsTheSystemDefaultWhenTheSelectedDeviceIsGone() {
+        #expect(AudioInputDevices.resolve(uid: usb.uid, in: [builtIn]) == nil)
     }
 
-    @Test func usesTheDefaultWhenNothingIsSelected() {
-        #expect(AudioInputDevices.resolve(uid: nil, in: [builtIn, usb], defaultID: builtIn.id) == builtIn.id)
-        #expect(AudioInputDevices.resolve(uid: nil, in: [], defaultID: nil) == nil)
+    @Test func followsTheSystemDefaultWhenNothingIsSelected() {
+        #expect(AudioInputDevices.resolve(uid: nil, in: [builtIn, usb]) == nil)
     }
 
     @Test func listedDevicesHaveUniqueUIDsAndNames() {

@@ -36,12 +36,12 @@ enum AudioInputDevices {
         return id
     }
 
-    /// The device to record from: the one with `uid` if it's connected, otherwise the system default.
-    static func resolve(uid: String?, in devices: [AudioInputDevice], defaultID: AudioDeviceID?) -> AudioDeviceID? {
-        if let uid, let device = devices.first(where: { $0.uid == uid }) {
-            return device.id
-        }
-        return defaultID
+    /// The device to pin the microphone to: the one with `uid` if it's connected. `nil` means don't pin a device,
+    /// so the engine follows the system default input (and keeps following it if the default changes).
+    /// Pinning the default device explicitly instead breaks capture from Bluetooth headsets such as AirPods.
+    static func resolve(uid: String?, in devices: [AudioInputDevice]) -> AudioDeviceID? {
+        guard let uid else { return nil }
+        return devices.first(where: { $0.uid == uid })?.id
     }
 }
 #endif
