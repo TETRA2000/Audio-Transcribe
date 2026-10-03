@@ -39,6 +39,33 @@ struct TranscriptionEngineTests {
         }
     }
 
+    /// A live source that never delivers audio (e.g. a microphone that fails to start) must not leave the
+    /// results stream open forever, or stopping the session hangs.
+    @Test(.enabled("English on-device transcription is supported") {
+        await TranscriptionEngine.isAvailable(for: .english)
+    })
+    func liveResultsEndWhenFinishedWithoutAnyAudio() async throws {
+        let engine = TranscriptionEngine()
+        try await engine.prepareAssets(for: .english)
+        let results = try await engine.startLiveTranscription(language: .english)
+        try await engine.finishLiveTranscription()
+
+        let ended = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do { for try await _ in results {} } catch {}
+                return !Task.isCancelled
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+        #expect(ended, "The live results stream should end once the transcription is finished")
+    }
+
     private func transcribe(fixture: String, language: TranscriptionLanguage) async throws -> [TranscriptUpdate] {
         let bundle = Bundle(for: BundleToken.self)
         let url = try #require(

@@ -51,6 +51,10 @@ actor TranscriptionEngine {
     private var transcriber: SpeechTranscriber?
     private var converter: AnalyzerInputConverter?
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
+    private var liveResultsContinuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation?
+    /// Whether any audio reached the live analyzer. An analyzer that never received input doesn't end its
+    /// results when finalized, so the engine ends them itself.
+    private var didAppendLiveAudio = false
 
     static func resolvedLocale(for language: TranscriptionLanguage) async -> Locale? {
         await SpeechTranscriber.supportedLocale(equivalentTo: language.locale)
@@ -105,19 +109,21 @@ actor TranscriptionEngine {
 
         try await analyzer.start(inputSequence: inputSequence)
 
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await result in transcriber.results {
-                        continuation.yield(TranscriptUpdate(result))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        let (results, continuation) = AsyncThrowingStream.makeStream(of: TranscriptUpdate.self)
+        let task = Task {
+            do {
+                for try await result in transcriber.results {
+                    continuation.yield(TranscriptUpdate(result))
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
-            continuation.onTermination = { _ in task.cancel() }
         }
+        continuation.onTermination = { _ in task.cancel() }
+        liveResultsContinuation = continuation
+        didAppendLiveAudio = false
+        return results
     }
 
     /// Feeds a captured audio buffer (from the microphone or system audio) into the in-progress live transcription.
@@ -126,12 +132,16 @@ actor TranscriptionEngine {
         guard let inputs = try? converter.convert(buffer, at: nil) else { return }
         for input in inputs {
             inputContinuation.yield(input)
+            didAppendLiveAudio = true
         }
     }
 
     /// Stops feeding audio and waits for the transcriber to finalize its results.
     func finishLiveTranscription() async throws {
         let analyzer = self.analyzer
+        let resultsContinuation = liveResultsContinuation
+        let receivedAudio = didAppendLiveAudio
+        liveResultsContinuation = nil
         if let converter, let inputContinuation {
             if let inputs = try? converter.flush() {
                 for input in inputs {
@@ -142,6 +152,10 @@ actor TranscriptionEngine {
         }
         clearAnalysisState()
         try await analyzer?.finalizeAndFinishThroughEndOfInput()
+        if !receivedAudio {
+            // No input means no results to deliver, but the transcriber's results never end on their own.
+            resultsContinuation?.finish()
+        }
     }
 
     // MARK: - File transcription
