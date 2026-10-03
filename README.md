@@ -20,7 +20,7 @@ Transcription runs locally: the audio never leaves the device.
 | System audio | ✓     | —            | —        |
 | File         | ✓     | ✓            | ✓        |
 
-System audio needs Core Audio process taps, which exist only on macOS. The option is compiled out (`#if os(macOS)`) and hidden from the source picker on the other platforms.
+System audio needs Core Audio process taps, which exist only on macOS. It is compiled out (`#if os(macOS)`) on the other platforms, where Live mode shows only the Microphone row.
 
 ## Requirements
 
@@ -64,7 +64,8 @@ xcodebuild test -scheme "Audio Transcribe" -destination 'platform=macOS'
 | `TranscriptionEngine.swift` | An actor that wraps `SpeechAnalyzer` / `SpeechTranscriber`. It installs model assets (`AssetInventory`) and runs both live streaming transcription and one-shot file transcription. |
 | `LiveChannel.swift` | One live source plus its own `TranscriptionEngine`. It stores segments on the session timeline and reports when its source stops by itself. |
 | `MicrophoneSource.swift` | Captures microphone audio with `AVAudioEngine`. On macOS it records from a chosen input device and survives output-device changes; on iOS and visionOS it configures `AVAudioSession`. |
-| `SystemAudioSource.swift` | macOS only. Captures all system audio or one app's audio (`SystemAudioTarget`) through a Core Audio process tap and a private aggregate device. |
+| `SystemAudioTarget.swift` | What system audio to capture: all audio or one app. |
+| `SystemAudioSource.swift` | macOS only. Captures all system audio or one app's audio (`SystemAudioTarget`) through a Core Audio process tap and a private aggregate device. For one app, it adds the app's helper processes that start during the recording to the tap. |
 | `AudioInputDevices.swift`, `AudioApps.swift`, `CoreAudioProperty.swift` | macOS only. List input devices and audio apps (helper processes are grouped under their app) with Core Audio. |
 | `AudioSourceCatalog.swift` | macOS only. Keeps the device and app lists current for the source menus. |
 | `TranscriptionViewModel.swift` | An `@Observable` `@MainActor` view model that coordinates mode, sources, language, status, and the merged transcript. |
