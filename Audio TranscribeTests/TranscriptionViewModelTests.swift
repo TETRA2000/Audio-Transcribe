@@ -92,6 +92,39 @@ struct TranscriptionViewModelTests {
         #expect(viewModel.hasSeparateSources)
     }
 
+    @Test func mergedTranscriptPicksUpSegmentsAppendedAfterARead() {
+        let viewModel = TranscriptionViewModel()
+        let mic = makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: "a", speaker: "You")])
+        let app = makeIdleChannel(.systemAudio, label: "Zoom", segments: [TranscriptSegment(start: 2, end: 3, text: "c", speaker: "Zoom")])
+        viewModel.channels = [mic, app]
+        #expect(viewModel.segments.map(\.text) == ["a", "c"])
+
+        mic.segments.append(TranscriptSegment(start: 1, end: 2, text: "b", speaker: "You"))
+        #expect(viewModel.segments.map(\.text) == ["a", "b", "c"])
+
+        app.segments.append(TranscriptSegment(start: 4, end: 5, text: "d", speaker: "Zoom"))
+        #expect(viewModel.segments.map(\.text) == ["a", "b", "c", "d"])
+    }
+
+    @Test func mergedTranscriptFollowsReplacedChannels() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: "old")]),
+            makeIdleChannel(.systemAudio, label: "Zoom"),
+        ]
+        #expect(viewModel.segments.map(\.text) == ["old"])
+
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: "new")]),
+            makeIdleChannel(.systemAudio, label: "Zoom"),
+        ]
+        #expect(viewModel.segments.map(\.text) == ["new"])
+
+        viewModel.channels = []
+        viewModel.fileSegments = [TranscriptSegment(start: 0, end: 1, text: "file")]
+        #expect(viewModel.segments.map(\.text) == ["file"])
+    }
+
     @Test func liveChannelsReplaceTheFileTranscript() {
         let viewModel = TranscriptionViewModel()
         viewModel.fileSegments = [TranscriptSegment(start: 0, end: 1, text: "file")]

@@ -69,9 +69,28 @@ final class TranscriptionViewModel {
     }
 
     /// The transcript on one timeline: the live channels merged by time, or else the file transcript.
+    ///
+    /// The view reads this several times per render, and in-progress text re-renders it many times a second,
+    /// so the merge is cached. Channels only ever append segments, so a channel's segment count and last
+    /// segment identify its contents.
     var segments: [TranscriptSegment] {
-        channels.isEmpty ? fileSegments : TranscriptSegment.merged(channels.map(\.segments))
+        guard !channels.isEmpty else { return fileSegments }
+        let key = channels.map { MergeKey(channel: ObjectIdentifier($0), count: $0.segments.count, lastID: $0.segments.last?.id) }
+        if let mergeCache, mergeCache.key == key {
+            return mergeCache.segments
+        }
+        let merged = TranscriptSegment.merged(channels.map(\.segments))
+        mergeCache = (key, merged)
+        return merged
     }
+
+    private struct MergeKey: Equatable {
+        let channel: ObjectIdentifier
+        let count: Int
+        let lastID: UUID?
+    }
+
+    @ObservationIgnored private var mergeCache: (key: [MergeKey], segments: [TranscriptSegment])?
 
     var volatileLines: [VolatileLine] {
         if channels.isEmpty {
