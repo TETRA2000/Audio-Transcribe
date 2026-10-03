@@ -111,6 +111,23 @@ struct TranscriptExporterTests {
         #expect(try String(contentsOf: urls[1], encoding: .utf8) == "app")
     }
 
+    @Test func writeDoesNotOverwriteAFileThatAppearsJustBeforeWriting() throws {
+        let folder = try makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        // Simulates another process creating the file between choosing a name and writing it.
+        var raced = false
+        let urls = try TranscriptExporter.write([ExportFile(name: "T.txt", text: "new")], to: folder) { url in
+            guard !raced else { return }
+            raced = true
+            try? "other".write(to: url, atomically: false, encoding: .utf8)
+        }
+
+        #expect(urls.map(\.lastPathComponent) == ["T 2.txt"])
+        #expect(try String(contentsOf: folder.appending(path: "T.txt"), encoding: .utf8) == "other")
+        #expect(try String(contentsOf: urls[0], encoding: .utf8) == "new")
+    }
+
     private func makeTemporaryFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

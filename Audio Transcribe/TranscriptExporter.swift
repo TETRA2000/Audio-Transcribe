@@ -73,23 +73,37 @@ enum TranscriptExporter {
 
     /// Writes each file into `folder` as UTF-8. Instead of overwriting an existing file, a number is added before
     /// the extension (`T 2.txt`, `T 3.txt`, …). Returns the URLs written, in order.
-    static func write(_ files: [ExportFile], to folder: URL) throws -> [URL] {
+    ///
+    /// Each write refuses to replace an existing file (`.withoutOverwriting`), so a file that appears while
+    /// exporting is never overwritten: the next number is tried instead. `beforeWriting` is called with each
+    /// candidate URL just before writing it (tests use it to simulate such a file).
+    static func write(
+        _ files: [ExportFile],
+        to folder: URL,
+        beforeWriting: (URL) -> Void = { _ in }
+    ) throws -> [URL] {
         try files.map { file in
-            let url = availableURL(for: file.name, in: folder)
-            try file.text.write(to: url, atomically: true, encoding: .utf8)
-            return url
+            let data = Data(file.text.utf8)
+            for url in candidateURLs(for: file.name, in: folder) {
+                beforeWriting(url)
+                do {
+                    try data.write(to: url, options: .withoutOverwriting)
+                    return url
+                } catch CocoaError.fileWriteFileExists {
+                    continue
+                }
+            }
+            preconditionFailure("candidateURLs is unbounded")
         }
     }
 
-    private static func availableURL(for name: String, in folder: URL) -> URL {
+    /// `name`, then `name` with ` 2`, ` 3`, … added before the extension.
+    private static func candidateURLs(for name: String, in folder: URL) -> some Sequence<URL> {
         let base = (name as NSString).deletingPathExtension
         let pathExtension = (name as NSString).pathExtension
-        var url = folder.appending(path: name)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-            url = folder.appending(path: "\(base) \(counter).\(pathExtension)")
-            counter += 1
+        return (1...).lazy.map { counter in
+            guard counter > 1 else { return folder.appending(path: name) }
+            return folder.appending(path: pathExtension.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(pathExtension)")
         }
-        return url
     }
 }
