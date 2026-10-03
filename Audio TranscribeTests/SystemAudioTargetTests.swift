@@ -28,6 +28,33 @@ struct SystemAudioTargetTests {
         #expect(description.isPrivate)
     }
 
+    @Test func processListIsUnchangedWhenTheSameProcessesResolve() {
+        #expect(SystemAudioSource.updatedProcessList(current: [41, 42], resolved: [41, 42]) == nil)
+        #expect(SystemAudioSource.updatedProcessList(current: [41, 42], resolved: [42, 41]) == nil)
+    }
+
+    @Test func processListIsKeptWhenNoProcessesResolve() {
+        #expect(SystemAudioSource.updatedProcessList(current: [41, 42], resolved: []) == nil)
+    }
+
+    @Test func processListIncludesHelpersThatStartedLater() {
+        #expect(SystemAudioSource.updatedProcessList(current: [41], resolved: [41, 57]) == [41, 57])
+    }
+
+    @Test func processListDropsProcessesThatExited() {
+        #expect(SystemAudioSource.updatedProcessList(current: [41, 57], resolved: [41]) == [41])
+    }
+
+    @Test func updatedTapDescriptionKeepsTheTapsUUID() {
+        let target = SystemAudioTarget.app(bundleID: "com.google.Chrome", name: "Google Chrome")
+        let original = SystemAudioSource.tapDescription(for: target, processObjectIDs: [41])
+        let updated = SystemAudioSource.tapDescription(for: target, processObjectIDs: [41, 57], uuid: original.uuid)
+        #expect(updated.uuid == original.uuid)
+        #expect(updated.processes == [41, 57])
+        #expect(updated.isPrivate)
+        #expect(!updated.isExclusive)
+    }
+
     @Test func startingAnAppThatIsNotRunningFails() {
         let source = SystemAudioSource()
         let error = #expect(throws: SystemAudioCaptureError.self) {
