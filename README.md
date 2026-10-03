@@ -6,11 +6,12 @@ Transcription runs locally: the audio never leaves the device.
 
 ## Features
 
-- **Microphone**: live transcription. The in-progress text is shown dimmed until it becomes final.
-- **System audio (macOS only)**: transcribes whatever the Mac is playing (browser videos, calls, media players). It captures audio with a Core Audio process tap.
+- **Microphone**: live transcription. The in-progress text is shown dimmed until it becomes final. On macOS you can choose the input device.
+- **System audio (macOS only)**: transcribes everything the Mac is playing, or just one app (for example Zoom or Chrome). It captures audio with a Core Audio process tap.
+- **Microphone + system audio together (macOS only)**: each source gets its own transcriber, and the transcript labels each line **You** or with the app's name, in time order. This works well for calls: use headphones, otherwise the microphone also hears the other participants.
 - **Files**: transcribes audio or video files (`.m4a`, `.mp3`, `.wav`, `.mp4`, `.mov`, …) and shows timestamps.
 - **Languages**: English (`en-US`) and Japanese (`ja-JP`).
-- **Output**: Copy or Share the finished transcript as plain text.
+- **Output**: Copy or Share the transcript as plain text, or Export it as `.txt`. Multi-source transcripts can be exported as one combined file, one file per source, or both.
 - **Model download**: the on-device language models download on first use, with a progress bar.
 
 | Source       | macOS | iOS / iPadOS | visionOS |
@@ -41,7 +42,7 @@ The first time you use each source, the system asks for permission:
 The app runs in the App Sandbox with these entitlements:
 
 - `com.apple.security.device.audio-input`
-- `com.apple.security.files.user-selected.read-only`
+- `com.apple.security.files.user-selected.read-write` (to open audio files and save exports)
 
 ## Tests
 
@@ -61,11 +62,15 @@ xcodebuild test -scheme "Audio Transcribe" -destination 'platform=macOS'
 | File | Role |
 |------|------|
 | `TranscriptionEngine.swift` | An actor that wraps `SpeechAnalyzer` / `SpeechTranscriber`. It installs model assets (`AssetInventory`) and runs both live streaming transcription and one-shot file transcription. |
-| `MicrophoneSource.swift` | Captures microphone audio with `AVAudioEngine` and configures `AVAudioSession` on iOS and visionOS. |
-| `SystemAudioSource.swift` | macOS only. Captures system audio through a Core Audio process tap and a private aggregate device, and copies each IOProc buffer into an `AVAudioPCMBuffer`. |
-| `TranscriptionViewModel.swift` | An `@Observable` `@MainActor` view model that coordinates source, language, status, and transcript state. |
-| `TranscriptSegment.swift` | The model for one finalized transcript line (text plus start and end times). |
-| `ContentView.swift` | The UI: pickers for source and language, Start/Stop or Open File…, status bar, scrolling transcript, and Copy/Share. |
+| `LiveChannel.swift` | One live source plus its own `TranscriptionEngine`. It stores segments on the session timeline and reports when its source stops by itself. |
+| `MicrophoneSource.swift` | Captures microphone audio with `AVAudioEngine`. On macOS it records from a chosen input device and survives output-device changes; on iOS and visionOS it configures `AVAudioSession`. |
+| `SystemAudioSource.swift` | macOS only. Captures all system audio or one app's audio (`SystemAudioTarget`) through a Core Audio process tap and a private aggregate device. |
+| `AudioInputDevices.swift`, `AudioApps.swift`, `CoreAudioProperty.swift` | macOS only. List input devices and audio apps (helper processes are grouped under their app) with Core Audio. |
+| `AudioSourceCatalog.swift` | macOS only. Keeps the device and app lists current for the source menus. |
+| `TranscriptionViewModel.swift` | An `@Observable` `@MainActor` view model that coordinates mode, sources, language, status, and the merged transcript. |
+| `TranscriptSegment.swift` | One finalized transcript line (text, start and end times, optional speaker), plus merging of several sources by time. |
+| `TranscriptExporter.swift` | Formats combined and per-source `.txt` exports and writes them without overwriting existing files. |
+| `ContentView.swift`, `LiveSourcesView.swift`, `PlainTextDocument.swift` | The UI: Live/File mode, source rows, language, Start/Stop or Open File…, status bar, labeled transcript, and Copy/Share/Export. |
 
 For live sources, captured buffers are converted to the analyzer's preferred format with `AnalyzerInputConverter` and streamed into the analyzer through `SpeechTranscriber`'s `.progressiveTranscription` preset. Files use the `.transcription` preset and are analyzed directly from an `AVAudioFile`.
 
@@ -75,3 +80,6 @@ The target builds with Swift 5 language mode and `SWIFT_DEFAULT_ACTOR_ISOLATION 
 
 - `AVAudioNode.installTap(onBus:bufferSize:format:block:)` is deprecated in the 27.0 SDKs. The replacement doesn't have a public Swift API yet, so the build shows one deprecation warning.
 - Language availability depends on the device. The app checks `SpeechTranscriber.supportedLocales` at runtime.
+- Echo is not cancelled. When you record the microphone and system audio together through speakers, the microphone also picks up the other participants, so their words can appear twice. Use headphones.
+- Some apps play audio from a helper process that isn't named after the app. Safari's audio comes from "Safari Graphics and Media", which is listed only while it is playing.
+- Devices and targets can't be changed during a recording.
