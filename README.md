@@ -25,7 +25,7 @@ System audio needs Core Audio process taps, which exist only on macOS. It is com
 ## Requirements
 
 - Xcode 27 or later
-- macOS / iOS / iPadOS / visionOS 27.0 or later
+- macOS 26.0 or later, or iOS / iPadOS / visionOS 27.0 or later
 - Hardware that supports the on-device Speech models. On unsupported devices, or where a language isn't available, the app shows an error. The iOS Simulator doesn't provide the models.
 
 ## Getting started
@@ -56,6 +56,8 @@ xcodebuild test -scheme "Audio Transcribe" -destination 'platform=macOS'
 
 - It is skipped automatically where the Speech models are unavailable, such as the iOS Simulator.
 - The first run may download the language models.
+
+GitHub Actions (`.github/workflows/tests.yml`) builds the tests once with Xcode 27 and runs them on macOS 26 and macOS 27. GitHub's macOS VMs can't run the Speech models, so CI leaves out `TranscriptionEngineTests`; run them locally.
 
 ## Project structure
 

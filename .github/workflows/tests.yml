@@ -1,0 +1,76 @@
+name: Tests
+
+# Docs-only changes don't need a run.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Compile once with the Xcode 27 SDK. The macOS deployment target is 26.0, so the same
+  # products run on both macOS versions; the macos-26 image has no Xcode 27 to build with anyway.
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.0
+        run: sudo xcode-select -s /Applications/Xcode_27.app
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+            -scheme "Audio Transcribe" \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+      # The tests link this Xcode's Swift Testing, but on macos-26 the test runner would load Xcode 26's
+      # older copy and its _Testing_* overlays (missing symbols either way). __TESTROOT__/Debug comes
+      # first in the xctestrun's DYLD_FRAMEWORK_PATH, so ship the whole set there; it supports macOS 14+.
+      - name: Bundle Swift Testing with the products
+        run: |
+          shared="$(xcode-select -p)/../SharedFrameworks"
+          cp -R "$shared/Testing.framework" "$shared"/_Testing_*.framework "$shared/lib_TestingInterop.dylib" \
+            DerivedData/Build/Products/Debug/
+      # upload-artifact drops executable bits, so ship the products as a tarball.
+      - name: Package test products
+        run: tar -czf products.tgz -C DerivedData/Build Products
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-products
+          path: products.tgz
+          retention-days: 1
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [xcode-27, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+      - name: Unpack test products
+        run: tar -xzf products.tgz
+      - name: OS and Xcode
+        run: sw_vers && xcodebuild -version
+      # TranscriptionEngineTests need the on-device Speech models, which GitHub's macOS VMs don't
+      # support (they skip themselves there), so leave them to local runs.
+      - name: Unit tests
+        run: |
+          xcodebuild test-without-building \
+            -xctestrun Products/*.xctestrun \
+            -destination 'platform=macOS' \
+            -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests"

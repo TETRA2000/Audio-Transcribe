@@ -49,12 +49,25 @@ nonisolated struct TranscriptUpdate: Sendable {
 actor TranscriptionEngine {
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
-    private var converter: AnalyzerInputConverter?
+    private var converter: (any LiveAudioConverter)?
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
     private var liveResultsContinuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation?
     /// Whether any audio reached the live analyzer. An analyzer that never received input doesn't end its
     /// results when finalized, so the engine ends them itself.
     private var didAppendLiveAudio = false
+    private let makeConverter: @Sendable (AVAudioFormat) -> any LiveAudioConverter
+
+    init(makeConverter: @escaping @Sendable (AVAudioFormat) -> any LiveAudioConverter = TranscriptionEngine.defaultConverter) {
+        self.makeConverter = makeConverter
+    }
+
+    /// The Speech framework's converter where it exists; `AVAudioConverter` on macOS 26.
+    nonisolated static func defaultConverter(analyzerFormat: AVAudioFormat) -> any LiveAudioConverter {
+        if #available(macOS 27, iOS 27, visionOS 27, *) {
+            return SystemAnalyzerInputConverter(analyzerFormat: analyzerFormat)
+        }
+        return AVAudioAnalyzerInputConverter(analyzerFormat: analyzerFormat)
+    }
 
     static func resolvedLocale(for language: TranscriptionLanguage) async -> Locale? {
         await SpeechTranscriber.supportedLocale(equivalentTo: language.locale)
@@ -98,7 +111,7 @@ actor TranscriptionEngine {
             throw TranscriptionError.audioFormatUnavailable
         }
 
-        let converter = AnalyzerInputConverter(analyzerFormat: audioFormat)
+        let converter = makeConverter(audioFormat)
         let (inputSequence, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
@@ -129,7 +142,7 @@ actor TranscriptionEngine {
     /// Feeds a captured audio buffer (from the microphone or system audio) into the in-progress live transcription.
     func appendLiveAudio(_ buffer: AVAudioPCMBuffer) {
         guard let converter, let inputContinuation else { return }
-        guard let inputs = try? converter.convert(buffer, at: nil) else { return }
+        guard let inputs = try? converter.convert(buffer) else { return }
         for input in inputs {
             inputContinuation.yield(input)
             didAppendLiveAudio = true
