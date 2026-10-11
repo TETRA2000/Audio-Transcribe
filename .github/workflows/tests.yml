@@ -34,12 +34,13 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
       # The tests link this Xcode's Swift Testing, but on macos-26 the test runner would load Xcode 26's
-      # older copy (missing symbols). __TESTROOT__/Debug comes first in the xctestrun's
-      # DYLD_FRAMEWORK_PATH, so ship ours there; it supports macOS 14 and later.
+      # older copy and its _Testing_* overlays (missing symbols either way). __TESTROOT__/Debug comes
+      # first in the xctestrun's DYLD_FRAMEWORK_PATH, so ship the whole set there; it supports macOS 14+.
       - name: Bundle Swift Testing with the products
         run: |
           shared="$(xcode-select -p)/../SharedFrameworks"
-          cp -R "$shared/Testing.framework" "$shared/lib_TestingInterop.dylib" DerivedData/Build/Products/Debug/
+          cp -R "$shared/Testing.framework" "$shared"/_Testing_*.framework "$shared/lib_TestingInterop.dylib" \
+            DerivedData/Build/Products/Debug/
       # upload-artifact drops executable bits, so ship the products as a tarball.
       - name: Package test products
         run: tar -czf products.tgz -C DerivedData/Build Products
