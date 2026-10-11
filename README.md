@@ -25,7 +25,7 @@ System audio needs Core Audio process taps, which exist only on macOS. It is com
 ## Requirements
 
 - Xcode 27 or later
-- macOS / iOS / iPadOS / visionOS 27.0 or later
+- macOS 26.0 or later, or iOS / iPadOS / visionOS 27.0 or later
 - Hardware that supports the on-device Speech models. On unsupported devices, or where a language isn't available, the app shows an error. The iOS Simulator doesn't provide the models.
 
 ## Getting started

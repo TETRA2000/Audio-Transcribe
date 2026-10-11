@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import Audio_Transcribe
@@ -66,12 +67,41 @@ struct TranscriptionEngineTests {
         #expect(ended, "The live results stream should end once the transcription is finished")
     }
 
-    private func transcribe(fixture: String, language: TranscriptionLanguage) async throws -> [TranscriptUpdate] {
+    /// macOS 26 has no `AnalyzerInputConverter`, so live audio goes through `AVAudioAnalyzerInputConverter`.
+    /// Force it here so the fallback is exercised end to end on newer systems too.
+    @Test(.enabled("English on-device transcription is supported") {
+        await TranscriptionEngine.isAvailable(for: .english)
+    })
+    func transcribesLiveAudioWithTheFallbackConverter() async throws {
+        let engine = TranscriptionEngine(makeConverter: { AVAudioAnalyzerInputConverter(analyzerFormat: $0) })
+        try await engine.prepareAssets(for: .english)
+        let results = try await engine.startLiveTranscription(language: .english)
+
+        let file = try AVAudioFile(forReading: try fixtureURL("english-sample"))
+        while file.framePosition < file.length {
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_096))
+            try file.read(into: buffer)
+            await engine.appendLiveAudio(buffer)
+        }
+        try await engine.finishLiveTranscription()
+
+        var text = ""
+        for try await update in results where update.isFinal {
+            text += update.text
+        }
+        #expect(text.lowercased().contains("quick brown fox"))
+    }
+
+    private func fixtureURL(_ fixture: String) throws -> URL {
         let bundle = Bundle(for: BundleToken.self)
-        let url = try #require(
+        return try #require(
             bundle.url(forResource: fixture, withExtension: "m4a")
                 ?? bundle.url(forResource: fixture, withExtension: "m4a", subdirectory: "Fixtures")
         )
+    }
+
+    private func transcribe(fixture: String, language: TranscriptionLanguage) async throws -> [TranscriptUpdate] {
+        let url = try fixtureURL(fixture)
         let engine = TranscriptionEngine()
         try await engine.prepareAssets(for: language)
         var updates: [TranscriptUpdate] = []
