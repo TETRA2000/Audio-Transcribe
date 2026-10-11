@@ -57,6 +57,8 @@ xcodebuild test -scheme "Audio Transcribe" -destination 'platform=macOS'
 - It is skipped automatically where the Speech models are unavailable, such as the iOS Simulator.
 - The first run may download the language models.
 
+GitHub Actions (`.github/workflows/tests.yml`) builds the tests once with Xcode 27 and runs them on macOS 26 and macOS 27. GitHub's macOS VMs can't run the Speech models, so CI leaves out `TranscriptionEngineTests`; run them locally.
+
 ## Project structure
 
 | File | Role |

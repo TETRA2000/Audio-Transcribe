@@ -57,7 +57,7 @@ jobs:
       matrix:
         runner: [xcode-27, macos-26]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -66,19 +66,11 @@ jobs:
         run: tar -xzf products.tgz
       - name: OS and Xcode
         run: sw_vers && xcodebuild -version
+      # TranscriptionEngineTests need the on-device Speech models, which GitHub's macOS VMs don't
+      # support (they skip themselves there), so leave them to local runs.
       - name: Unit tests
         run: |
           xcodebuild test-without-building \
             -xctestrun Products/*.xctestrun \
             -destination 'platform=macOS' \
             -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests"
-      # Runs the real Speech models, so it measures whether they're available on CI and how long
-      # the download takes. Non-blocking while we decide whether to keep it in CI.
-      - name: Speech model tests (measurement)
-        continue-on-error: true
-        timeout-minutes: 15
-        run: |
-          xcodebuild test-without-building \
-            -xctestrun Products/*.xctestrun \
-            -destination 'platform=macOS' \
-            -only-testing:"Audio TranscribeTests/TranscriptionEngineTests"
