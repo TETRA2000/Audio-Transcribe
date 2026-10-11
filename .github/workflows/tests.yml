@@ -1,0 +1,76 @@
+name: Tests
+
+# Docs-only changes don't need a run.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Compile once with the Xcode 27 SDK. The macOS deployment target is 26.0, so the same
+  # products run on both macOS versions; the macos-26 image has no Xcode 27 to build with anyway.
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.0
+        run: sudo xcode-select -s /Applications/Xcode_27.app
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+            -scheme "Audio Transcribe" \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+      # upload-artifact drops executable bits, so ship the products as a tarball.
+      - name: Package test products
+        run: tar -czf products.tgz -C DerivedData/Build Products
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-products
+          path: products.tgz
+          retention-days: 1
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [xcode-27, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+      - name: Unpack test products
+        run: tar -xzf products.tgz
+      - name: OS and Xcode
+        run: sw_vers && xcodebuild -version
+      - name: Unit tests
+        run: |
+          xcodebuild test-without-building \
+            -xctestrun Products/*.xctestrun \
+            -destination 'platform=macOS' \
+            -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests"
+      # Runs the real Speech models, so it measures whether they're available on CI and how long
+      # the download takes. Non-blocking while we decide whether to keep it in CI.
+      - name: Speech model tests (measurement)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          xcodebuild test-without-building \
+            -xctestrun Products/*.xctestrun \
+            -destination 'platform=macOS' \
+            -only-testing:"Audio TranscribeTests/TranscriptionEngineTests"
