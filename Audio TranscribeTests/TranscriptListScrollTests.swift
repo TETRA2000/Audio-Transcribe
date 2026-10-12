@@ -3,7 +3,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 /// Hosts the transcript in a real window, with a bottom bar like ContentView's Copy/Share bar, and feeds it through a
 /// live channel the way the transcriber does: bursts of in-progress text, then a final line followed straight away

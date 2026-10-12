@@ -1,7 +1,7 @@
 #if os(macOS)
 import CoreAudio
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct AudioInputDevicesTests {
     private let builtIn = AudioInputDevice(id: 10, uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone")

@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 /// Runs the real on-device model. Skipped where Apple Intelligence isn't available, including GitHub's macOS VMs.
 @Suite(.timeLimit(.minutes(2)))

@@ -1,6 +1,6 @@
 import AVFoundation
 import Foundation
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct TestError: LocalizedError {
     var errorDescription: String? { "Test error." }

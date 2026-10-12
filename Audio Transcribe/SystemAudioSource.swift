@@ -54,7 +54,7 @@ final class SystemAudioSource {
         tapID = newTapID
 
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Audio Transcribe Capture",
+            kAudioAggregateDeviceNameKey: "Transcripta Capture",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,
