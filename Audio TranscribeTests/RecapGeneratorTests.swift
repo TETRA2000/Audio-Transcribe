@@ -131,7 +131,7 @@ struct RecapGeneratorTests {
 
     @Test func instructionsAskForTheReplyFormat() {
         for instructions in [SystemRecapGenerator.instructions(for: .japanese), SystemRecapGenerator.mergeInstructions(for: .english)] {
-            #expect(instructions.contains("Summary: <1 to 3 sentences>\nKey points:\n- <point>"))
+            #expect(instructions.contains("Summary: <headline>\nKey points:\n- <point>"))
         }
     }
 
@@ -140,5 +140,20 @@ struct RecapGeneratorTests {
             let refusal = LanguageModelError.refusal(.init(explanation: "", debugDescription: "May contain sensitive content"))
             #expect(RecapErrors.message(for: refusal) == "The on-device model declined the request.")
         }
+    }
+
+    @Test(arguments: ["\"2026: A year of promise\"", "“2026: A year of promise”", "「2026: A year of promise」", "'2026: A year of promise'"])
+    func parseStripsQuotesAroundTheHeadline(quoted: String) {
+        #expect(SystemRecapGenerator.parse("Summary: \(quoted)\nKey points:\n- x").headline == "2026: A year of promise")
+    }
+
+    @Test func parseKeepsQuotesInsideTheHeadline() {
+        #expect(SystemRecapGenerator.parse("Summary: Jobs calls NeXT \"a success\"").headline == "Jobs calls NeXT \"a success\"")
+    }
+
+    @Test func instructionsAskForAShortHeadline() {
+        #expect(SystemRecapGenerator.instructions(for: .english).contains("a headline of at most 12 words"))
+        #expect(SystemRecapGenerator.instructions(for: .japanese).contains("a headline of at most 30 characters"))
+        #expect(SystemRecapGenerator.replyFormat.contains("Summary: <headline>"))
     }
 }

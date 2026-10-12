@@ -66,9 +66,9 @@ final class SystemRecapGenerator: RecapGenerating {
         }
         let keyPointsIndex = lines[(summaryIndex + 1)...].firstIndex { text(after: keyPointsLabels, in: $0) != nil }
         let firstLine = text(after: summaryLabels, in: lines[summaryIndex]) ?? ""
-        let summary = ([firstLine] + lines[(summaryIndex + 1)..<(keyPointsIndex ?? lines.endIndex)])
+        let headline = unquoted(([firstLine] + lines[(summaryIndex + 1)..<(keyPointsIndex ?? lines.endIndex)])
             .filter { !$0.isEmpty }
-            .joined(separator: " ")
+            .joined(separator: " "))
 
         var keyPoints: [String] = []
         if let keyPointsIndex {
@@ -78,7 +78,19 @@ final class SystemRecapGenerator: RecapGenerating {
                 if !point.isEmpty { keyPoints.append(point) }
             }
         }
-        return RecapContent(headline: summary, keyPoints: Array(keyPoints.prefix(maximumKeyPoints)))
+        return RecapContent(headline: headline, keyPoints: Array(keyPoints.prefix(maximumKeyPoints)))
+    }
+
+    /// `text` without one pair of quotes around all of it: the model often quotes its headlines.
+    private static func unquoted(_ text: String) -> String {
+        let pairs: [(Character, Character)] = [("\"", "\""), ("“", "”"), ("「", "」"), ("『", "』"), ("'", "'")]
+        for (open, close) in pairs where text.count >= 2 && text.first == open && text.last == close {
+            let inner = text.dropFirst().dropLast()
+            // "a" and "b" is two quotes, not one quoted headline.
+            guard !inner.contains(close) else { continue }
+            return inner.trimmingCharacters(in: .whitespaces)
+        }
+        return text
     }
 
     /// The rest of `line` after one of `labels` and a colon, or `nil` when the line doesn't start with a label.
@@ -92,7 +104,35 @@ final class SystemRecapGenerator: RecapGenerating {
     }
 
     static let replyFormat = "Reply in exactly this format, with no other text, and keep the labels \"Summary:\" and \"Key points:\" in English:\n"
-        + "Summary: <1 to 3 sentences>\nKey points:\n- <point>\n- <point>\n"
+        + "Summary: <headline>\nKey points:\n- <point>\n- <point>\n"
+
+    /// How long a headline may be: counted in words for English, in characters for Japanese.
+    static func headlineLength(for language: TranscriptionLanguage) -> String {
+        switch language {
+        case .english: "at most 12 words"
+        case .japanese: "at most 30 characters"
+        }
+    }
+
+    // The model ignores instructions about how a summary may start ("never begin with 'The conversation
+    // discusses'"), but a headline-plus-key-points shape keeps it to what was said. Tried on real transcripts:
+    // 1–3 sentence summaries opened with "The conversation/episode…" 15 times in 18; headlines never did.
+    static func instructions(for language: TranscriptionLanguage) -> String {
+        "You summarize a live conversation transcript. Each line is \"Speaker: text\"; lines without a speaker come from a single source. "
+            + "Write a headline of \(headlineLength(for: language)) that states the main point, like a news headline, "
+            + "and up to 6 key points: important names, numbers, dates, decisions and requests. "
+            + "Use only what is in the transcript. "
+            + replyFormat
+            + "Respond in \(language.responseLanguageName)."
+    }
+
+    static func mergeInstructions(for language: TranscriptionLanguage) -> String {
+        "You combine recaps of consecutive parts of one conversation into a single recap. "
+            + "Write a headline of \(headlineLength(for: language)) that states the main point of the whole, like a news headline, "
+            + "and up to 6 key points, keeping the most important names, numbers, dates, decisions and requests. "
+            + replyFormat
+            + "Respond in \(language.responseLanguageName)."
+    }
 
     static func budget(for language: TranscriptionLanguage) -> Int {
         switch language {
@@ -121,20 +161,6 @@ final class SystemRecapGenerator: RecapGenerating {
         return result
     }
 
-    static func instructions(for language: TranscriptionLanguage) -> String {
-        "You summarize a live conversation transcript. Each line is \"Speaker: text\"; lines without a speaker come from a single source. "
-            + "Write a summary of 1 to 3 sentences and up to 6 key points: important names, numbers, dates, decisions and requests. "
-            + "Use only what is in the transcript. "
-            + replyFormat
-            + "Respond in \(language.responseLanguageName)."
-    }
-
-    static func mergeInstructions(for language: TranscriptionLanguage) -> String {
-        "You combine partial recaps of consecutive parts of one conversation into a single recap. "
-            + "Write a summary of 1 to 3 sentences and up to 6 key points, keeping the most important names, numbers, dates, decisions and requests. "
-            + replyFormat
-            + "Respond in \(language.responseLanguageName)."
-    }
 
     static func prompt(lines: [String], earlier: String?) -> String {
         var parts: [String] = []

@@ -174,6 +174,7 @@ private struct RecapEntryRow: View {
             switch entry.state {
             case .done(let content):
                 Text(content.headline)
+                    .fontWeight(.semibold)
                     .textSelection(.enabled)
                 if !content.keyPoints.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {

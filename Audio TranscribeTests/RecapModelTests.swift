@@ -22,6 +22,9 @@ struct RecapModelTests {
         "You: よろしくお願いします。問題なければ2月3日の導入を目指しましょう。",
     ]
 
+    /// Openers that describe the conversation instead of saying what was said.
+    static let metaOpener = try! Regex(#"^(?i)(the|this|in this) (conversation|episode|discussion|transcript|speakers?|podcast|meeting)\b"#)
+
     /// Harmless, but structured (`@Generable`) generation refused it as "May contain sensitive content" every time.
     static let anxious = [
         "We're headed somewhere, and it's not clear yet whether it's a good place or a bad one.",
@@ -36,6 +39,8 @@ struct RecapModelTests {
     func recapsEnglish() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.english, earlier: nil, language: .english)
         #expect(!content.headline.isEmpty)
+        #expect(content.headline.split(separator: " ").count <= 16, "headline: \(content.headline)")
+        #expect(content.headline.firstMatch(of: Self.metaOpener) == nil, "headline: \(content.headline)")
         #expect(!content.keyPoints.isEmpty)
         #expect(content.keyPoints.count <= 6)
     }
