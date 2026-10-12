@@ -1,10 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-#endif
 
 struct ContentView: View {
     private enum ImportPurpose {
@@ -25,6 +20,11 @@ struct ContentView: View {
     @State private var isExportingFile = false
     @State private var exportDocument = PlainTextDocument(text: "")
     @State private var exportFileName = ""
+    #if os(macOS)
+    @State private var showsRecap = true
+    #else
+    @State private var showsRecap = false
+    #endif
 
     private var isLocked: Bool { viewModel.isRecording || viewModel.isBusy }
 
@@ -35,6 +35,16 @@ struct ContentView: View {
             statusBar
             Divider()
             transcriptView
+        }
+        .inspector(isPresented: Binding(
+            get: { showsRecap && viewModel.mode == .live },
+            set: { showsRecap = $0 }
+        )) {
+            RecapView(scheduler: viewModel.recap, isRecording: viewModel.isRecording) { id in
+                viewModel.retryRecap(id)
+            }
+            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
+            .presentationDragIndicator(.visible)
         }
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 440)
@@ -83,7 +93,18 @@ struct ContentView: View {
             .pickerStyle(.segmented)
             .disabled(isLocked)
 
-            actionButton
+            HStack {
+                actionButton
+                Spacer()
+                if viewModel.mode == .live {
+                    Button {
+                        showsRecap.toggle()
+                    } label: {
+                        Label("Recap", systemImage: "sidebar.trailing")
+                    }
+                    .help(showsRecap ? "Hide recaps" : "Show recaps")
+                }
+            }
         }
         .padding()
     }
@@ -235,7 +256,7 @@ struct ContentView: View {
                 exportControl
             }
             Button {
-                copyToClipboard(viewModel.fullText)
+                Pasteboard.copy(viewModel.fullText)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
@@ -302,15 +323,6 @@ struct ContentView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(color.opacity(0.15), in: .capsule)
-    }
-
-    private func copyToClipboard(_ text: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #else
-        UIPasteboard.general.string = text
-        #endif
     }
 }
 
