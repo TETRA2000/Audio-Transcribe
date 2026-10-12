@@ -337,4 +337,129 @@ struct RecapSchedulerTests {
         #expect(scheduler.availability == .appleIntelligenceOff)
         #expect(scheduler.nextRecapAt == nil)
     }
+
+    /// Two recaps at 600 and 1200, as a live session makes them.
+    private func twoRecaps(_ generator: FakeRecapGenerator) async -> (RecapScheduler, [TranscriptSegment]) {
+        let scheduler = makeScheduler(generator)
+        let segments = [speech(40, at: 0), speech(40, at: 700)]
+        scheduler.tick(now: 600, segments: [segments[0]])
+        await scheduler.waitForIdle()
+        scheduler.tick(now: 1200, segments: segments)
+        await scheduler.waitForIdle()
+        return (scheduler, segments)
+    }
+
+    @Test func finishSummarizesTheRecaps() async {
+        let generator = FakeRecapGenerator()
+        let (scheduler, segments) = await twoRecaps(generator)
+
+        await scheduler.finish(segments: segments)
+
+        #expect(generator.overviewCalls == [scheduler.entries.compactMap(\.content)])
+        #expect(scheduler.overview == .done(RecapContent(headline: "Overview 1", keyPoints: ["Overall point"])))
+    }
+
+    @Test func finishIncludesTheFinalRecapInTheOverview() async {
+        let generator = FakeRecapGenerator()
+        let (scheduler, segments) = await twoRecaps(generator)
+
+        await scheduler.finish(segments: segments + [speech(40, at: 1300)])
+
+        #expect(scheduler.entries.count == 3)
+        #expect(generator.overviewCalls.first?.count == 3)
+    }
+
+    @Test func oneRecapIsItsOwnSummary() async {
+        let generator = FakeRecapGenerator()
+        let scheduler = makeScheduler(generator)
+        let a = speech(40, at: 0)
+        scheduler.tick(now: 600, segments: [a])
+        await scheduler.waitForIdle()
+
+        await scheduler.finish(segments: [a])
+
+        #expect(generator.overviewCalls.isEmpty)
+        #expect(scheduler.overview == nil)
+    }
+
+    @Test func failedRecapsAreLeftOutOfTheOverview() async {
+        let generator = FakeRecapGenerator()
+        generator.results = [.failure(FakeRecapError())]
+        let scheduler = makeScheduler(generator)
+        let segments = [speech(40, at: 0), speech(40, at: 700), speech(40, at: 1300)]
+        scheduler.tick(now: 600, segments: [segments[0]])
+        await scheduler.waitForIdle()
+        scheduler.tick(now: 1200, segments: Array(segments.prefix(2)))
+        await scheduler.waitForIdle()
+
+        await scheduler.finish(segments: segments)
+
+        #expect(generator.overviewCalls.first?.map(\.headline) == ["Summary 2", "Summary 3"])
+    }
+
+    @Test func overviewFailureIsShown() async {
+        let generator = FakeRecapGenerator()
+        generator.overviewResults = [.failure(FakeRecapError())]
+        let (scheduler, segments) = await twoRecaps(generator)
+
+        await scheduler.finish(segments: segments)
+
+        #expect(scheduler.overview == .failed(message: "Boom"))
+    }
+
+    @Test func summarizeRecapsAgainReplacesTheOverview() async {
+        let generator = FakeRecapGenerator()
+        generator.overviewResults = [.failure(FakeRecapError())]
+        let (scheduler, segments) = await twoRecaps(generator)
+        await scheduler.finish(segments: segments)
+
+        await scheduler.summarizeRecaps()
+
+        #expect(generator.overviewCalls.count == 2)
+        #expect(scheduler.overview == .done(RecapContent(headline: "Overview 2", keyPoints: ["Overall point"])))
+    }
+
+    @Test func clearRemovesTheOverview() async {
+        let generator = FakeRecapGenerator()
+        let (scheduler, segments) = await twoRecaps(generator)
+        await scheduler.finish(segments: segments)
+
+        scheduler.clear()
+
+        #expect(scheduler.overview == nil)
+    }
+
+    @Test func summarizeTranscriptRecapsTheWholeTranscript() async {
+        let generator = FakeRecapGenerator()
+        let scheduler = makeScheduler(generator)
+        let segments = [speech(20, at: 0), speech(20, at: 3000)]
+
+        await scheduler.summarizeTranscript(segments)
+
+        #expect(generator.calls.map(\.lines) == [TranscriptSegment.lines(segments)])
+        #expect(generator.calls.first?.earlier == nil)
+        #expect(scheduler.overview == .done(RecapContent(headline: "Summary 1", keyPoints: ["Point"])))
+        #expect(scheduler.entries.isEmpty)
+    }
+
+    @Test func shortTranscriptsAreNotSummarized() async {
+        let generator = FakeRecapGenerator()
+        let scheduler = makeScheduler(generator)
+
+        await scheduler.summarizeTranscript([speech(10, at: 0)])
+
+        #expect(generator.calls.isEmpty)
+        #expect(scheduler.overview == nil)
+    }
+
+    @Test func noOverviewWithoutTheModel() async {
+        let generator = FakeRecapGenerator()
+        generator.availability = .deviceNotEligible
+        let scheduler = makeScheduler(generator)
+
+        await scheduler.summarizeTranscript([speech(40, at: 0)])
+
+        #expect(generator.calls.isEmpty)
+        #expect(scheduler.overview == nil)
+    }
 }

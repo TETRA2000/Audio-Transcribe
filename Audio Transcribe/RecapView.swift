@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// The Recap side panel: recaps of the live session, oldest first, newest appended at the bottom.
+/// The Recap side panel: the summary of the whole conversation pinned at the top, then the live session's recaps,
+/// oldest first, newest appended at the bottom. In File mode it shows only the summary of the file.
 struct RecapView: View {
     @Bindable var scheduler: RecapScheduler
     let isRecording: Bool
+    let isFileMode: Bool
     let onRetry: (UUID) -> Void
+    let onSummarizeAgain: () -> Void
 
     @Environment(\.openURL) private var openURL
 
@@ -12,9 +15,13 @@ struct RecapView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if let overview = scheduler.overview {
+                OverviewSection(state: overview, onSummarizeAgain: onSummarizeAgain)
+                Divider()
+            }
             content
                 .frame(maxHeight: .infinity)
-            if scheduler.availability == .available {
+            if scheduler.availability == .available, !isFileMode {
                 Divider()
                 footer
             }
@@ -26,22 +33,28 @@ struct RecapView: View {
             Text("Recap")
                 .font(.headline)
             Spacer()
-            Menu {
-                Picker("Summarize every", selection: $scheduler.interval) {
-                    ForEach(RecapInterval.allCases) { interval in
-                        Text(interval.menuLabel).tag(interval)
-                    }
-                }
-                .pickerStyle(.inline)
-                Text("Applies from the next recap.")
-            } label: {
-                Text(scheduler.interval.shortLabel)
+            if !isFileMode {
+                intervalMenu
             }
-            .fixedSize()
-            .disabled(scheduler.availability != .available)
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+    }
+
+    private var intervalMenu: some View {
+        Menu {
+            Picker("Summarize every", selection: $scheduler.interval) {
+                ForEach(RecapInterval.allCases) { interval in
+                    Text(interval.menuLabel).tag(interval)
+                }
+            }
+            .pickerStyle(.inline)
+            Text("Applies from the next recap.")
+        } label: {
+            Text(scheduler.interval.shortLabel)
+        }
+        .fixedSize()
+        .disabled(scheduler.availability != .available)
     }
 
     @ViewBuilder
@@ -57,6 +70,14 @@ struct RecapView: View {
                     Button("Open System Settings…") { openURL(url) }
                 }
                 #endif
+            }
+        } else if isFileMode && scheduler.entries.isEmpty {
+            if scheduler.overview == nil {
+                ContentUnavailableView {
+                    Label("No summary yet", systemImage: "doc.text")
+                } description: {
+                    Text("A summary appears here when a file finishes transcribing. Very short transcripts aren't summarized.")
+                }
             }
         } else if scheduler.entries.isEmpty && !scheduler.isGenerating {
             ContentUnavailableView {
@@ -173,21 +194,7 @@ private struct RecapEntryRow: View {
             }
             switch entry.state {
             case .done(let content):
-                Text(content.headline)
-                    .fontWeight(.semibold)
-                    .textSelection(.enabled)
-                if !content.keyPoints.isEmpty {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(content.keyPoints.enumerated()), id: \.offset) { _, point in
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text("•")
-                                Text(point)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
+                RecapContentView(content: content)
             case .failed(let message):
                 Label {
                     Text("Couldn't summarize this part. \(message)")
@@ -204,9 +211,85 @@ private struct RecapEntryRow: View {
     }
 }
 
+/// A recap's headline in bold, then its key points.
+private struct RecapContentView: View {
+    let content: RecapContent
+
+    var body: some View {
+        Text(content.headline)
+            .fontWeight(.semibold)
+            .textSelection(.enabled)
+        if !content.keyPoints.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(content.keyPoints.enumerated()), id: \.offset) { _, point in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("•")
+                        Text(point)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The summary of the whole conversation, pinned above the recaps.
+private struct OverviewSection: View {
+    let state: OverviewState
+    let onSummarizeAgain: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Summary of the conversation")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if case .done(let content) = state {
+                    Button {
+                        Pasteboard.copy(content.plainText)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy summary")
+                    .accessibilityLabel("Copy summary")
+                }
+            }
+            switch state {
+            case .generating:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Summarizing the whole conversation…")
+                }
+            case .done(let content):
+                RecapContentView(content: content)
+            case .failed(let message):
+                Label {
+                    Text("Couldn't summarize the conversation. \(message)")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            }
+            if state != .generating {
+                Button("Summarize again", systemImage: "arrow.clockwise", action: onSummarizeAgain)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.06))
+    }
+}
+
 private final class PreviewRecapGenerator: RecapGenerating {
     var availability: RecapAvailability
     init(_ availability: RecapAvailability) { self.availability = availability }
+    func overview(of parts: [RecapContent], language: TranscriptionLanguage) async throws -> RecapContent {
+        RecapContent(headline: "Vendor pick narrows to two; rollout targets Feb 3", keyPoints: ["Larkspur is 18% cheaper", "Overnight support still open"])
+    }
     func recap(lines: [String], earlier: String?, language: TranscriptionLanguage) async throws -> RecapContent {
         RecapContent(
             headline: "Shortlist down to Northwind and Larkspur",
@@ -220,12 +303,21 @@ private final class PreviewRecapGenerator: RecapGenerating {
     scheduler.reset(language: .english)
     let segments = (0..<12).map { TranscriptSegment(start: TimeInterval($0 * 50), end: TimeInterval($0 * 50 + 5), text: "We compared the vendor options and agreed on next steps", speaker: "You") }
     scheduler.tick(now: 600, segments: segments)
-    return RecapView(scheduler: scheduler, isRecording: true) { _ in }
+    return RecapView(scheduler: scheduler, isRecording: true, isFileMode: false, onRetry: { _ in }, onSummarizeAgain: {})
+        .frame(width: 340, height: 600)
+}
+
+#Preview("File summary") {
+    let scheduler = RecapScheduler(generator: PreviewRecapGenerator(.available))
+    scheduler.reset(language: .english)
+    let segments = (0..<12).map { TranscriptSegment(start: TimeInterval($0 * 50), end: TimeInterval($0 * 50 + 5), text: "We compared the vendor options and agreed on next steps") }
+    Task { await scheduler.summarizeTranscript(segments) }
+    return RecapView(scheduler: scheduler, isRecording: false, isFileMode: true, onRetry: { _ in }, onSummarizeAgain: {})
         .frame(width: 340, height: 600)
 }
 
 #Preview("Unavailable") {
     let scheduler = RecapScheduler(generator: PreviewRecapGenerator(.appleIntelligenceOff))
-    return RecapView(scheduler: scheduler, isRecording: true) { _ in }
+    return RecapView(scheduler: scheduler, isRecording: true, isFileMode: false, onRetry: { _ in }, onSummarizeAgain: {})
         .frame(width: 340, height: 600)
 }

@@ -18,6 +18,10 @@ final class RecapScheduler {
     /// Session time of the last tick that made, or skipped, a recap.
     private(set) var lastRecapAt: TimeInterval = 0
 
+    /// The summary of the whole conversation: made at the end of a live session from its recaps, or from the whole
+    /// transcript of a file. `nil` until one is made, and when there is nothing to summarize.
+    private(set) var overview: OverviewState?
+
     var isGenerating: Bool { generatingWindow != nil }
 
     /// Identifies the current session: it changes on every `reset` and `clear`.
@@ -57,6 +61,7 @@ final class RecapScheduler {
         lastRecapAt = 0
         generatingWindow = nil
         hasEnded = false
+        overview = nil
     }
 
     /// Called periodically while recording. Recaps the uncovered segments once `interval` has passed.
@@ -79,9 +84,44 @@ final class RecapScheduler {
         refreshAvailability()
         guard availability == .available else { return }
         let window = uncovered(in: segments)
-        guard Self.hasEnoughContent(window, language: language) else { return }
-        startRecap(of: window, isFinal: true, replacing: nil)
-        await waitForIdle()
+        if Self.hasEnoughContent(window, language: language) {
+            startRecap(of: window, isFinal: true, replacing: nil)
+            await waitForIdle()
+        }
+        guard generation == self.generation else { return }
+        await summarizeRecaps()
+    }
+
+    /// Summarizes the whole session from its successful recaps. With fewer than two there is nothing to combine:
+    /// a single recap already is the summary.
+    func summarizeRecaps() async {
+        let parts = entries.compactMap(\.content)
+        guard parts.count >= 2 else { return }
+        let language = self.language
+        await makeOverview { generator in try await generator.overview(of: parts, language: language) }
+    }
+
+    /// Summarizes a whole transcript, such as a transcribed file, in one recap.
+    func summarizeTranscript(_ segments: [TranscriptSegment]) async {
+        guard Self.hasEnoughContent(segments, language: language) else { return }
+        let lines = TranscriptSegment.lines(segments)
+        let language = self.language
+        await makeOverview { generator in try await generator.recap(lines: lines, earlier: nil, language: language) }
+    }
+
+    private func makeOverview(_ make: (any RecapGenerating) async throws -> RecapContent) async {
+        refreshAvailability()
+        guard availability == .available, overview != .generating else { return }
+        let generation = self.generation
+        overview = .generating
+        let state: OverviewState
+        do {
+            state = .done(try await make(generator))
+        } catch {
+            state = .failed(message: RecapErrors.message(for: error))
+        }
+        guard generation == self.generation else { return }
+        overview = state
     }
 
     /// Runs a failed entry's window again and replaces that entry with the result.

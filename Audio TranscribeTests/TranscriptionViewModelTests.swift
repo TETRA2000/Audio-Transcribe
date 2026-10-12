@@ -358,4 +358,16 @@ struct TranscriptionViewModelRecapTests {
         #expect(!viewModel.recap.hasEnded)
         #expect(viewModel.recap.entries.isEmpty)
     }
+
+    @Test func summarizeAgainUsesTheFileTranscriptWhenThereAreNoChannels() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+
+        await viewModel.summarizeAgain()
+
+        #expect(generator.calls.map(\.lines) == [TranscriptSegment.lines(viewModel.fileSegments)])
+        #expect(viewModel.recap.overview == .done(RecapContent(headline: "Summary 1", keyPoints: ["Point"])))
+    }
 }

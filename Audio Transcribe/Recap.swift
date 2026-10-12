@@ -44,6 +44,13 @@ struct RecapEntry: Identifiable, Equatable {
     }
 }
 
+/// The summary of a whole conversation, as the panel shows it.
+enum OverviewState: Equatable {
+    case generating
+    case done(RecapContent)
+    case failed(message: String)
+}
+
 enum RecapInterval: Int, CaseIterable, Identifiable {
     case five = 5
     case ten = 10

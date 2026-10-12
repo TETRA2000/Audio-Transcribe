@@ -224,6 +224,19 @@ final class TranscriptionViewModel {
             status = .idle
         } catch {
             status = .failed(error.localizedDescription)
+            return
+        }
+        recap.reset(language: language)
+        await recap.summarizeTranscript(fileSegments)
+    }
+
+    /// Makes the summary of the whole conversation again: from the recaps after a live session, or from the whole
+    /// transcript of a file.
+    func summarizeAgain() async {
+        if channels.isEmpty {
+            await recap.summarizeTranscript(fileSegments)
+        } else {
+            await recap.summarizeRecaps()
         }
     }
 

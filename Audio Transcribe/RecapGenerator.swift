@@ -5,6 +5,8 @@ import FoundationModels
 protocol RecapGenerating: AnyObject {
     var availability: RecapAvailability { get }
     func recap(lines: [String], earlier: String?, language: TranscriptionLanguage) async throws -> RecapContent
+    /// Combines recaps of consecutive parts of one conversation into a single recap of the whole.
+    func overview(of parts: [RecapContent], language: TranscriptionLanguage) async throws -> RecapContent
 }
 
 /// Recaps with Apple Intelligence's on-device model. Each call uses fresh sessions, so context never builds up.
@@ -16,6 +18,9 @@ protocol RecapGenerating: AnyObject {
 final class SystemRecapGenerator: RecapGenerating {
     static let minimumChunkCharacters = 500
     static let maximumKeyPoints = 6
+    /// How many recaps one merge call combines. More are combined in rounds, so the prompt stays well inside the
+    /// model's context however long the conversation is.
+    static let mergeGroupSize = 8
 
     var availability: RecapAvailability {
         RecapAvailability(SystemLanguageModel.default.availability)
@@ -37,9 +42,13 @@ final class SystemRecapGenerator: RecapGenerating {
                 partials.append(try await recap(chunk, budget: budget / 2, earlier: earlier, language: language))
             }
         }
-        guard let first = partials.first else { throw EmptyTranscriptError() }
-        if partials.count == 1 { return first }
-        return try await respond(instructions: Self.mergeInstructions(for: language), prompt: Self.mergePrompt(partials))
+        return try await overview(of: partials, language: language)
+    }
+
+    func overview(of parts: [RecapContent], language: TranscriptionLanguage) async throws -> RecapContent {
+        try await Self.combine(parts, groupSize: Self.mergeGroupSize) { group in
+            try await self.respond(instructions: Self.mergeInstructions(for: language), prompt: Self.mergePrompt(group))
+        }
     }
 
     private func respond(instructions: String, prompt: String) async throws -> RecapContent {
@@ -49,6 +58,30 @@ final class SystemRecapGenerator: RecapGenerating {
     }
 
     // MARK: Pure helpers
+
+    /// Merges `parts` in groups of at most `groupSize`, then merges the results the same way, until one is left.
+    /// A group of one passes through unmerged.
+    static func combine(
+        _ parts: [RecapContent],
+        groupSize: Int,
+        merge: ([RecapContent]) async throws -> RecapContent
+    ) async throws -> RecapContent {
+        guard !parts.isEmpty else { throw EmptyTranscriptError() }
+        var level = parts
+        while level.count > 1 {
+            var next: [RecapContent] = []
+            for group in groups(level, size: groupSize) {
+                next.append(group.count == 1 ? group[0] : try await merge(group))
+            }
+            level = next
+        }
+        return level[0]
+    }
+
+    /// `items` split into consecutive groups of `size`; the last group may be smaller.
+    static func groups<Item>(_ items: [Item], size: Int) -> [[Item]] {
+        stride(from: 0, to: items.count, by: size).map { Array(items[$0..<min($0 + size, items.count)]) }
+    }
 
     /// Labels the model uses for the two parts of its reply. It is asked for the English ones, but translates them
     /// when it answers in Japanese.

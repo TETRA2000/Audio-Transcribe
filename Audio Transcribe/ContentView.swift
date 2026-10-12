@@ -36,13 +36,14 @@ struct ContentView: View {
             Divider()
             transcriptView
         }
-        .inspector(isPresented: Binding(
-            get: { showsRecap && viewModel.mode == .live },
-            set: { showsRecap = $0 }
-        )) {
-            RecapView(scheduler: viewModel.recap, isRecording: viewModel.isRecording) { id in
-                viewModel.retryRecap(id)
-            }
+        .inspector(isPresented: $showsRecap) {
+            RecapView(
+                scheduler: viewModel.recap,
+                isRecording: viewModel.isRecording,
+                isFileMode: viewModel.mode == .file,
+                onRetry: { id in viewModel.retryRecap(id) },
+                onSummarizeAgain: { Task { await viewModel.summarizeAgain() } }
+            )
             .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
             .presentationDragIndicator(.visible)
         }
@@ -96,14 +97,12 @@ struct ContentView: View {
             HStack {
                 actionButton
                 Spacer()
-                if viewModel.mode == .live {
-                    Button {
-                        showsRecap.toggle()
-                    } label: {
-                        Label("Recap", systemImage: "sidebar.trailing")
-                    }
-                    .help(showsRecap ? "Hide recaps" : "Show recaps")
+                Button {
+                    showsRecap.toggle()
+                } label: {
+                    Label("Recap", systemImage: "sidebar.trailing")
                 }
+                .help(showsRecap ? "Hide recaps" : "Show recaps")
             }
         }
         .padding()

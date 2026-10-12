@@ -59,4 +59,27 @@ struct RecapModelTests {
         #expect(content.keyPoints.count <= 6)
         #expect(content.headline.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) })
     }
+
+    @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
+    func overviewCombinesManyRecapsInRounds() async throws {
+        let topics = [
+            ("Kickoff: ticketing vendor must be live before Dec 31", ["Budget cap is $40k a year", "You own the migration checklist"]),
+            ("Five vendors reviewed; three lack SSO or Japanese support", ["Shortlist: Northwind and Larkspur"]),
+            ("Larkspur is 18% cheaper but only offers business-hours support", ["Tokyo team needs overnight coverage"]),
+            ("Dana at Larkspur will be asked about an overnight tier", ["Email goes out today"]),
+            ("Northwind demo set for Thursday at 3 pm", ["Bring SSO questions"]),
+            ("Data migration needs two weeks of testing", ["Start testing Jan 6"]),
+            ("Training sessions planned for both offices", ["Tokyo session in Japanese"]),
+            ("Rollout targeted for Feb 3 if Larkspur says yes", ["Fallback: Northwind on Feb 17"]),
+            ("Old contract cannot be extended past Dec 31", ["Legal confirmed on Monday"]),
+            ("Next check-in is Friday", ["Decision due then"]),
+        ].map { RecapContent(headline: $0.0, keyPoints: $0.1) }
+
+        let content = try await SystemRecapGenerator().overview(of: topics, language: .english)
+
+        #expect(!content.headline.isEmpty)
+        #expect(content.headline.split(separator: " ").count <= 16, "headline: \(content.headline)")
+        #expect(!content.keyPoints.isEmpty)
+        #expect(content.keyPoints.count <= 6)
+    }
 }

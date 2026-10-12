@@ -156,4 +156,30 @@ struct RecapGeneratorTests {
         #expect(SystemRecapGenerator.instructions(for: .japanese).contains("a headline of at most 30 characters"))
         #expect(SystemRecapGenerator.replyFormat.contains("Summary: <headline>"))
     }
+
+    @Test(arguments: [(0, [Int]()), (1, [1]), (8, [8]), (9, [8, 1]), (17, [8, 8, 1])])
+    func groupsOfAtMostEight(count: Int, sizes: [Int]) {
+        #expect(SystemRecapGenerator.groups(Array(0..<count), size: 8).map(\.count) == sizes)
+    }
+
+    @Test func combiningManyPartsMergesInRounds() async throws {
+        let parts = (1...17).map { RecapContent(headline: "p\($0)", keyPoints: []) }
+        var merges: [[String]] = []
+        let result = try await SystemRecapGenerator.combine(parts, groupSize: 8) { group in
+            merges.append(group.map(\.headline))
+            return RecapContent(headline: "m\(merges.count)", keyPoints: [])
+        }
+        // Round 1: 8 + 8 merged, the 17th passes through. Round 2: the three results merged.
+        #expect(merges == [(1...8).map { "p\($0)" }, (9...16).map { "p\($0)" }, ["m1", "m2", "p17"]])
+        #expect(result.headline == "m3")
+    }
+
+    @Test func combiningOnePartReturnsItUnchanged() async throws {
+        let part = RecapContent(headline: "only", keyPoints: ["x"])
+        let result = try await SystemRecapGenerator.combine([part], groupSize: 8) { _ in
+            Issue.record("one part needs no merge")
+            return part
+        }
+        #expect(result == part)
+    }
 }

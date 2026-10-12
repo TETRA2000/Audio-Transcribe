@@ -32,6 +32,18 @@ final class FakeRecapGenerator: RecapGenerating {
         return try result.get()
     }
 
+    /// The parts passed to each `overview(of:language:)` call.
+    private(set) var overviewCalls: [[RecapContent]] = []
+    var overviewResults: [Result<RecapContent, Error>] = []
+
+    func overview(of parts: [RecapContent], language: TranscriptionLanguage) async throws -> RecapContent {
+        overviewCalls.append(parts)
+        let result = overviewResults.isEmpty
+            ? .success(RecapContent(headline: "Overview \(overviewCalls.count)", keyPoints: ["Overall point"]))
+            : overviewResults.removeFirst()
+        return try result.get()
+    }
+
     func releaseHeldCalls() {
         let continuations = held
         held = []
