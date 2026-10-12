@@ -35,7 +35,7 @@ struct RecapModelTests {
     @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
     func recapsEnglish() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.english, earlier: nil, language: .english)
-        #expect(!content.summary.isEmpty)
+        #expect(!content.headline.isEmpty)
         #expect(!content.keyPoints.isEmpty)
         #expect(content.keyPoints.count <= 6)
     }
@@ -43,15 +43,15 @@ struct RecapModelTests {
     @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
     func recapsAnAnxiousButHarmlessConversation() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.anxious, earlier: nil, language: .english)
-        #expect(!content.summary.isEmpty)
+        #expect(!content.headline.isEmpty)
     }
 
     @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
     func recapsJapanese() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.japanese, earlier: "They opened the vendor review.", language: .japanese)
-        #expect(!content.summary.isEmpty)
+        #expect(!content.headline.isEmpty)
         #expect(!content.keyPoints.isEmpty)
         #expect(content.keyPoints.count <= 6)
-        #expect(content.summary.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) })
+        #expect(content.headline.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) })
     }
 }

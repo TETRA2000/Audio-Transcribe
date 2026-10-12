@@ -173,7 +173,7 @@ private struct RecapEntryRow: View {
             }
             switch entry.state {
             case .done(let content):
-                Text(content.summary)
+                Text(content.headline)
                     .textSelection(.enabled)
                 if !content.keyPoints.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
@@ -208,7 +208,7 @@ private final class PreviewRecapGenerator: RecapGenerating {
     init(_ availability: RecapAvailability) { self.availability = availability }
     func recap(lines: [String], earlier: String?, language: TranscriptionLanguage) async throws -> RecapContent {
         RecapContent(
-            summary: "Five vendors were reviewed; three were dropped for lacking SSO or Japanese-language support.",
+            headline: "Shortlist down to Northwind and Larkspur",
             keyPoints: ["Shortlist: Northwind, Larkspur", "SSO is a hard requirement", "Northwind demo Thursday 3 pm"]
         )
     }

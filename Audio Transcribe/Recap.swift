@@ -3,17 +3,17 @@ import FoundationModels
 
 /// One recap's text: what `SystemRecapGenerator.parse` reads from the model's reply.
 nonisolated struct RecapContent: Equatable, Sendable {
-    var summary: String
+    var headline: String
     var keyPoints: [String]
 
-    init(summary: String, keyPoints: [String]) {
-        self.summary = summary
+    init(headline: String, keyPoints: [String]) {
+        self.headline = headline
         self.keyPoints = keyPoints
     }
 
-    /// The summary followed by one `- ` line per key point, for Copy.
+    /// The headline followed by one `- ` line per key point, for Copy and export.
     var plainText: String {
-        ([summary] + keyPoints.map { "- \($0)" }).joined(separator: "\n")
+        ([headline] + keyPoints.map { "- \($0)" }).joined(separator: "\n")
     }
 }
 

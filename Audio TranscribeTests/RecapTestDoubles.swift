@@ -27,7 +27,7 @@ final class FakeRecapGenerator: RecapGenerating {
             await withCheckedContinuation { held.append($0) }
         }
         let result = results.isEmpty
-            ? .success(RecapContent(summary: "Summary \(number)", keyPoints: ["Point"]))
+            ? .success(RecapContent(headline: "Summary \(number)", keyPoints: ["Point"]))
             : results.removeFirst()
         return try result.get()
     }

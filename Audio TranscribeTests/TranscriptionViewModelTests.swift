@@ -333,7 +333,7 @@ struct TranscriptionViewModelRecapTests {
 
     @Test func retryRecapRerunsTheFailedWindow() async {
         let generator = FakeRecapGenerator()
-        let retried = RecapContent(summary: "Retried", keyPoints: [])
+        let retried = RecapContent(headline: "Retried", keyPoints: [])
         generator.results = [.failure(FakeRecapError()), .success(retried)]
         let viewModel = makeViewModel(generator)
         await viewModel.stop()

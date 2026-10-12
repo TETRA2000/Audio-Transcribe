@@ -38,7 +38,7 @@ struct RecapSchedulerTests {
         #expect(entry.windowEnd == 305)
         #expect(entry.segmentIDs == segments.map(\.id))
         #expect(!entry.isFinal)
-        #expect(entry.content == RecapContent(summary: "Summary 1", keyPoints: ["Point"]))
+        #expect(entry.content == RecapContent(headline: "Summary 1", keyPoints: ["Point"]))
         #expect(scheduler.lastRecapAt == 600)
         #expect(scheduler.nextRecapAt == 1200)
         #expect(!scheduler.isGenerating)
@@ -207,8 +207,8 @@ struct RecapSchedulerTests {
 
     @Test func retryReplacesTheFailedEntryInPlace() async {
         let generator = FakeRecapGenerator()
-        let second = RecapContent(summary: "Second", keyPoints: [])
-        let retried = RecapContent(summary: "Retried", keyPoints: [])
+        let second = RecapContent(headline: "Second", keyPoints: [])
+        let retried = RecapContent(headline: "Retried", keyPoints: [])
         generator.results = [.failure(FakeRecapError()), .success(second), .success(retried)]
         let scheduler = makeScheduler(generator)
         let a = speech(40, at: 0)

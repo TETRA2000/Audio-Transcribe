@@ -129,7 +129,7 @@ final class RecapScheduler {
         let start = window.map(\.start).min() ?? 0
         let end = max(window.map(\.end).max() ?? start, start)
         let lines = TranscriptSegment.lines(window)
-        let earlier = summary(before: id)
+        let earlier = headline(before: id)
         let language = self.language
         let generation = self.generation
         let generator = self.generator
@@ -156,9 +156,9 @@ final class RecapScheduler {
         }
     }
 
-    /// The summary of the latest successful recap before `id`, or before the end of the list when `id` is nil.
-    private func summary(before id: UUID?) -> String? {
+    /// The headline of the latest successful recap before `id`, or before the end of the list when `id` is nil.
+    private func headline(before id: UUID?) -> String? {
         let end = id.flatMap { id in entries.firstIndex { $0.id == id } } ?? entries.endIndex
-        return entries[..<end].reversed().lazy.compactMap(\.content).first?.summary
+        return entries[..<end].reversed().lazy.compactMap(\.content).first?.headline
     }
 }

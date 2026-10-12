@@ -50,8 +50,8 @@ struct RecapGeneratorTests {
 
     @Test func mergePromptListsEachPart() {
         let parts = [
-            RecapContent(summary: "A.", keyPoints: ["x"]),
-            RecapContent(summary: "B.", keyPoints: []),
+            RecapContent(headline: "A.", keyPoints: ["x"]),
+            RecapContent(headline: "B.", keyPoints: []),
         ]
         #expect(SystemRecapGenerator.mergePrompt(parts) == "Part 1:\nA.\n- x\n\nPart 2:\nB.")
     }
@@ -78,8 +78,8 @@ struct RecapGeneratorTests {
     }
 
     @Test func plainTextListsKeyPoints() {
-        #expect(RecapContent(summary: "S.", keyPoints: ["a", "b"]).plainText == "S.\n- a\n- b")
-        #expect(RecapContent(summary: "S.", keyPoints: []).plainText == "S.")
+        #expect(RecapContent(headline: "S.", keyPoints: ["a", "b"]).plainText == "S.\n- a\n- b")
+        #expect(RecapContent(headline: "S.", keyPoints: []).plainText == "S.")
     }
 
     @Test func entryRangeFormatting() {
@@ -95,33 +95,33 @@ struct RecapGeneratorTests {
     @Test func parsesAFormattedReply() {
         let reply = "Summary: They compared two vendors. Larkspur is cheaper.\nKey points:\n- Shortlist: Northwind, Larkspur\n- Rollout Feb 3"
         #expect(SystemRecapGenerator.parse(reply)
-            == RecapContent(summary: "They compared two vendors. Larkspur is cheaper.", keyPoints: ["Shortlist: Northwind, Larkspur", "Rollout Feb 3"]))
+            == RecapContent(headline: "They compared two vendors. Larkspur is cheaper.", keyPoints: ["Shortlist: Northwind, Larkspur", "Rollout Feb 3"]))
     }
 
     @Test func parseToleratesBlankLinesSpacesAndOtherBullets() {
         let reply = "  summary:   A.  \n\nKey Points:\n\n  • x  \n* y\n- z\n"
-        #expect(SystemRecapGenerator.parse(reply) == RecapContent(summary: "A.", keyPoints: ["x", "y", "z"]))
+        #expect(SystemRecapGenerator.parse(reply) == RecapContent(headline: "A.", keyPoints: ["x", "y", "z"]))
     }
 
     @Test func parseJoinsASummaryOverSeveralLines() {
         #expect(SystemRecapGenerator.parse("Summary: A.\nB.\nKey points:\n- x")
-            == RecapContent(summary: "A. B.", keyPoints: ["x"]))
+            == RecapContent(headline: "A. B.", keyPoints: ["x"]))
     }
 
     @Test func parseWithoutKeyPoints() {
-        #expect(SystemRecapGenerator.parse("Summary: A.") == RecapContent(summary: "A.", keyPoints: []))
+        #expect(SystemRecapGenerator.parse("Summary: A.") == RecapContent(headline: "A.", keyPoints: []))
     }
 
     @Test func parseKeepsAnUnformattedReplyAsTheSummary() {
         #expect(SystemRecapGenerator.parse("\nThey talked about grids.\n")
-            == RecapContent(summary: "They talked about grids.", keyPoints: []))
+            == RecapContent(headline: "They talked about grids.", keyPoints: []))
     }
 
     @Test(arguments: [("概要", "キーポイント", ":"), ("要約", "重要なポイント", "："), ("まとめ", "要点", ":")])
     func parsesJapaneseLabels(summary: String, keyPoints: String, colon: String) {
         let reply = "\(summary)\(colon) 導入は2月3日を目指します。\n\n\(keyPoints)\(colon)\n- 期限: 12月31日\n- 候補: ノースウィンド、ラークスパー"
         #expect(SystemRecapGenerator.parse(reply)
-            == RecapContent(summary: "導入は2月3日を目指します。", keyPoints: ["期限: 12月31日", "候補: ノースウィンド、ラークスパー"]))
+            == RecapContent(headline: "導入は2月3日を目指します。", keyPoints: ["期限: 12月31日", "候補: ノースウィンド、ラークスパー"]))
     }
 
     @Test func parseKeepsAtMostSixKeyPoints() {

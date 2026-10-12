@@ -62,7 +62,7 @@ final class SystemRecapGenerator: RecapGenerating {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         guard let summaryIndex = lines.firstIndex(where: { text(after: summaryLabels, in: $0) != nil }) else {
-            return RecapContent(summary: reply.trimmingCharacters(in: .whitespacesAndNewlines), keyPoints: [])
+            return RecapContent(headline: reply.trimmingCharacters(in: .whitespacesAndNewlines), keyPoints: [])
         }
         let keyPointsIndex = lines[(summaryIndex + 1)...].firstIndex { text(after: keyPointsLabels, in: $0) != nil }
         let firstLine = text(after: summaryLabels, in: lines[summaryIndex]) ?? ""
@@ -78,7 +78,7 @@ final class SystemRecapGenerator: RecapGenerating {
                 if !point.isEmpty { keyPoints.append(point) }
             }
         }
-        return RecapContent(summary: summary, keyPoints: Array(keyPoints.prefix(maximumKeyPoints)))
+        return RecapContent(headline: summary, keyPoints: Array(keyPoints.prefix(maximumKeyPoints)))
     }
 
     /// The rest of `line` after one of `labels` and a colon, or `nil` when the line doesn't start with a label.
