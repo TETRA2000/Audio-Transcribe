@@ -29,13 +29,7 @@ struct ContentView: View {
     private var isLocked: Bool { viewModel.isRecording || viewModel.isBusy }
 
     var body: some View {
-        VStack(spacing: 0) {
-            controls
-            Divider()
-            statusBar
-            Divider()
-            transcriptView
-        }
+        layout
         .inspector(isPresented: $showsRecap) {
             RecapView(
                 scheduler: viewModel.recap,
@@ -70,6 +64,162 @@ struct ContentView: View {
             }
         }
     }
+
+    #if os(macOS)
+    private var layout: some View {
+        VStack(spacing: 0) {
+            controls
+            Divider()
+            statusBar
+            Divider()
+            transcriptView
+        }
+    }
+    #else
+    /// iOS: the settings that frame a session (mode, language) and the recap live in the navigation bar, the
+    /// transcript fills the screen, and the one primary action sits at the bottom within thumb reach.
+    private var layout: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                statusBar
+                if viewModel.segments.isEmpty && viewModel.volatileLines.isEmpty {
+                    emptyTranscript
+                } else {
+                    TranscriptList(viewModel: viewModel)
+                }
+            }
+            .safeAreaBar(edge: .bottom) {
+                bottomBar
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Mode", selection: $viewModel.mode) {
+                        ForEach(CaptureMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .disabled(isLocked)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    languageMenu
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showsRecap.toggle()
+                    } label: {
+                        Label("Recap", systemImage: "apple.intelligence")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    transcriptMenu
+                }
+            }
+        }
+    }
+
+    private var languageMenu: some View {
+        Menu {
+            Picker("Language", selection: $viewModel.language) {
+                ForEach(TranscriptionLanguage.allCases) { language in
+                    Text(language.displayName).tag(language)
+                }
+            }
+        } label: {
+            Text(viewModel.language.displayName)
+        }
+        .disabled(isLocked)
+        .accessibilityLabel("Language: \(viewModel.language.displayName)")
+    }
+
+    /// Copy, share, export and clear: everything that acts on the finished transcript.
+    private var transcriptMenu: some View {
+        Menu {
+            Button {
+                Pasteboard.copy(viewModel.fullText)
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            ShareLink(item: viewModel.fullText) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            if !viewModel.isRecording {
+                exportControl
+                Divider()
+                Button("Clear Transcript", systemImage: "trash", role: .destructive) {
+                    viewModel.clear()
+                }
+            }
+        } label: {
+            Label("Transcript", systemImage: "ellipsis")
+        }
+        .disabled(viewModel.segments.isEmpty)
+    }
+
+    private var emptyTranscript: some View {
+        ContentUnavailableView {
+            switch viewModel.mode {
+            case .live: Label("Ready to Listen", systemImage: "waveform")
+            case .file: Label("Transcribe a File", systemImage: "doc.badge.plus")
+            }
+        } description: {
+            switch viewModel.mode {
+            case .live: Text("Tap Start to transcribe from the microphone in \(viewModel.language.displayName).")
+            case .file: Text("Choose an audio or video file to transcribe it in \(viewModel.language.displayName).")
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 8) {
+            if viewModel.mode == .live {
+                LiveSourcesView(viewModel: viewModel)
+                    .font(.footnote)
+            }
+            primaryButton
+        }
+        .padding(.horizontal)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private var primaryButton: some View {
+        switch viewModel.mode {
+        case .live:
+            Button {
+                Task {
+                    if viewModel.isRecording {
+                        await viewModel.stop()
+                    } else {
+                        await viewModel.start()
+                    }
+                }
+            } label: {
+                Label(viewModel.isRecording ? "Stop" : "Start",
+                      systemImage: viewModel.isRecording ? "stop.fill" : "mic.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(viewModel.isRecording ? .red : .accentColor)
+            .disabled(viewModel.isBusy || (!viewModel.isRecording && !viewModel.canStart))
+        case .file:
+            Button {
+                importPurpose = .audioFile
+                isImporting = true
+            } label: {
+                Label("Open File…", systemImage: "folder")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(viewModel.isBusy)
+        }
+    }
+    #endif
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
