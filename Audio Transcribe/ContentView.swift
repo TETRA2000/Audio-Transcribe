@@ -206,42 +206,12 @@ struct ContentView: View {
     }
 
     private var transcriptView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.segments) { segment in
-                        transcriptRow(segment)
-                            .id(segment.id)
-                    }
-                    ForEach(viewModel.volatileLines) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            if let label = line.label {
-                                speakerTag(label)
-                            }
-                            Text(line.text.trimmingCharacters(in: .whitespaces))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Color.clear
-                        .frame(height: 0)
-                        .id("volatile")
-                }
-                .padding()
-            }
-            .onChange(of: viewModel.segments.count) {
-                withAnimation {
-                    proxy.scrollTo(viewModel.segments.last?.id, anchor: .bottom)
+        TranscriptList(viewModel: viewModel)
+            .safeAreaInset(edge: .bottom) {
+                if !viewModel.segments.isEmpty {
+                    transcriptActions
                 }
             }
-            .onChange(of: viewModel.volatileLines) {
-                proxy.scrollTo("volatile", anchor: .bottom)
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if !viewModel.segments.isEmpty {
-                transcriptActions
-            }
-        }
     }
 
     private var transcriptActions: some View {
@@ -299,30 +269,6 @@ struct ContentView: View {
     private func chooseExportFolder(for kind: ExportKind) {
         importPurpose = .exportFolder(kind)
         isImporting = true
-    }
-
-    private func transcriptRow(_ segment: TranscriptSegment) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(segment.formattedStart)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            if let speaker = segment.speaker {
-                speakerTag(speaker)
-            }
-            Text(segment.text.trimmingCharacters(in: .whitespaces))
-        }
-    }
-
-    /// A small colored label: the first source (the microphone when enabled) uses the accent color, others orange.
-    private func speakerTag(_ speaker: String) -> some View {
-        let color: Color = speaker == viewModel.channels.first?.label ? .accentColor : .orange
-        return Text(speaker)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: .capsule)
     }
 }
 
