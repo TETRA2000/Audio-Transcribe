@@ -9,10 +9,10 @@ Transcription runs locally: the audio never leaves the device.
 - **Microphone**: live transcription. The in-progress text is shown dimmed until it becomes final. On macOS you can choose the input device.
 - **System audio (macOS only)**: transcribes everything the Mac is playing, or just one app (for example Zoom or Chrome). It captures audio with a Core Audio process tap.
 - **Microphone + system audio together (macOS only)**: each source gets its own transcriber, and the transcript labels each line **You** or with the app's name, in time order. This works well for calls: use headphones, otherwise the microphone also hears the other participants.
-- **Recap (Apple Intelligence)**: while recording live, the on-device model summarizes the conversation every 5, 10 or 15 minutes (10 by default) in a Recap side panel: a short summary plus key names, numbers, dates and decisions. New recaps are appended, so earlier ones stay visible, and Stop adds a final recap of the last few minutes. Recaps stay on the device and are cleared with the transcript. They need a device with Apple Intelligence turned on; without it, the panel says why and transcription works as usual.
+- **Recap (Apple Intelligence)**: while recording live, the on-device model recaps the conversation every 5, 10 or 15 minutes (10 by default) in a Recap side panel: a short headline plus key names, numbers, dates and decisions. New recaps are appended, so earlier ones stay visible, and Stop adds a final recap of the last few minutes. When the session ends, the recaps are combined into a summary of the whole conversation, pinned at the top of the panel. A transcribed file gets the same summary of its whole transcript. Recaps stay on the device and are cleared with the transcript. They need a device with Apple Intelligence turned on; without it, the panel says why and transcription works as usual.
 - **Files**: transcribes audio or video files (`.m4a`, `.mp3`, `.wav`, `.mp4`, `.mov`, …) and shows timestamps.
 - **Languages**: English (`en-US`) and Japanese (`ja-JP`).
-- **Output**: Copy or Share the transcript as plain text, or Export it as `.txt`. Multi-source transcripts can be exported as one combined file, one file per source, or both.
+- **Output**: Copy or Share the transcript as plain text, or Export it as `.txt`. Multi-source transcripts can be exported as one combined file, one file per source, or both. The combined file starts with the summary and the recaps, when there are any.
 - **Model download**: the on-device language models download on first use, with a progress bar.
 
 | Source       | macOS | iOS / iPadOS | visionOS |
@@ -76,13 +76,13 @@ GitHub Actions (`.github/workflows/tests.yml`) builds the tests once with Xcode 
 | `AudioSourceCatalog.swift` | macOS only. Keeps the device and app lists current for the source menus. |
 | `TranscriptionViewModel.swift` | An `@Observable` `@MainActor` view model that coordinates mode, sources, language, status, and the merged transcript. |
 | `TranscriptSegment.swift` | One finalized transcript line (text, start and end times, optional speaker), plus merging of several sources by time. |
-| `TranscriptExporter.swift` | Formats combined and per-source `.txt` exports and writes them without overwriting existing files. |
+| `TranscriptExporter.swift` | Formats combined and per-source `.txt` exports (the combined one headed by the summary and recaps) and writes them without overwriting existing files. |
 | `Recap.swift` | Recap data: `RecapContent` (summary and key points), `RecapEntry`, the interval presets, and Apple Intelligence availability. |
-| `RecapGenerator.swift` | Makes one recap with the on-device model (`FoundationModels`): a fresh session per call with the guardrails meant for summarizing user content, a plain-text reply in a fixed format that it parses, chunking of long windows, and a merge step. |
-| `RecapScheduler.swift` | Decides when a recap is due and which segments it covers (tracked by segment ID), keeps the append-only list, and handles the final recap and Retry. |
-| `RecapView.swift` | The Recap side panel. |
+| `RecapGenerator.swift` | Makes recaps with the on-device model (`FoundationModels`): a fresh session per call with the guardrails meant for summarizing user content, a plain-text headline-and-key-points reply that it parses, chunking of long windows, and merging of recaps in rounds of at most eight. |
+| `RecapScheduler.swift` | Decides when a recap is due and which segments it covers (tracked by segment ID), keeps the append-only list, handles the final recap and Retry, and makes the summary of the whole conversation. |
+| `RecapView.swift` | The Recap side panel: the summary of the whole conversation, then the recaps. |
 | `Pasteboard.swift` | Copies text to the clipboard on each platform. |
-| `ContentView.swift`, `LiveSourcesView.swift`, `PlainTextDocument.swift` | The UI: Live/File mode, source rows, language, Start/Stop or Open File…, status bar, labeled transcript, and Copy/Share/Export. |
+| `ContentView.swift`, `TranscriptList.swift`, `LiveSourcesView.swift`, `PlainTextDocument.swift` | The UI: Live/File mode, source rows, language, Start/Stop or Open File…, status bar, labeled transcript, and Copy/Share/Export. |
 
 For live sources, captured buffers are converted to the analyzer's preferred format with `AnalyzerInputConverter` and streamed into the analyzer through `SpeechTranscriber`'s `.progressiveTranscription` preset. Files use the `.transcription` preset and are analyzed directly from an `AVAudioFile`.
 

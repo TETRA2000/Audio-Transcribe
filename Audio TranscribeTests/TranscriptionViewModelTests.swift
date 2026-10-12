@@ -370,4 +370,16 @@ struct TranscriptionViewModelRecapTests {
         #expect(generator.calls.map(\.lines) == [TranscriptSegment.lines(viewModel.fileSegments)])
         #expect(viewModel.recap.overview == .done(RecapContent(headline: "Summary 1", keyPoints: ["Point"])))
     }
+
+    @Test func exportStartsWithTheSummaries() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+        await viewModel.summarizeAgain()
+
+        let text = viewModel.exportFiles(.combined, baseName: "T").first?.text ?? ""
+
+        #expect(text.hasPrefix("Summary\nSummary 1\n- Point\n\n----\n\n[00:00] word"))
+    }
 }

@@ -257,11 +257,13 @@ final class TranscriptionViewModel {
     }
 
     func exportFiles(_ kind: ExportKind, baseName: String) -> [ExportFile] {
-        TranscriptExporter.files(
+        let overview: RecapContent? = if case .done(let content) = recap.overview { content } else { nil }
+        return TranscriptExporter.files(
             kind,
             baseName: baseName,
             combined: segments,
-            channels: channels.map { (label: $0.label, segments: $0.segments) }
+            channels: channels.map { (label: $0.label, segments: $0.segments) },
+            header: TranscriptExporter.summaryHeader(overview: overview, recaps: recap.entries)
         )
     }
 

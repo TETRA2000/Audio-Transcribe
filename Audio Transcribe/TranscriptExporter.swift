@@ -37,16 +37,36 @@ enum TranscriptExporter {
         }
     }
 
-    /// The files for `kind`: the combined timeline first, then one file per channel.
+    /// The summary of the whole conversation, then each recap with its time range, or `nil` when there are neither.
+    static func summaryHeader(overview: RecapContent?, recaps: [RecapEntry]) -> String? {
+        var sections: [String] = []
+        if let overview {
+            sections.append("Summary\n" + overview.plainText)
+        }
+        if !recaps.isEmpty {
+            let lines = recaps.map { entry in
+                let text = entry.content?.plainText ?? "Couldn't summarize this part."
+                return "[\(entry.formattedRange)] \(text)"
+            }
+            sections.append("Recaps\n" + lines.joined(separator: "\n\n"))
+        }
+        return sections.isEmpty ? nil : sections.joined(separator: "\n\n")
+    }
+
+    /// The files for `kind`: the combined timeline first, then one file per channel. The combined file starts with
+    /// `header` (the summaries), separated from the transcript by a `----` line.
     static func files(
         _ kind: ExportKind,
         baseName: String,
         combined segments: [TranscriptSegment],
-        channels: [(label: String, segments: [TranscriptSegment])]
+        channels: [(label: String, segments: [TranscriptSegment])],
+        header: String? = nil
     ) -> [ExportFile] {
         var files: [ExportFile] = []
         if kind != .separate {
-            files.append(ExportFile(name: fileName(base: baseName, label: nil), text: combined(segments)))
+            let transcript = combined(segments)
+            let text = header.map { "\($0)\n\n----\n\n\(transcript)" } ?? transcript
+            files.append(ExportFile(name: fileName(base: baseName, label: nil), text: text))
         }
         if kind != .combined {
             files += separate(channels).map { ExportFile(name: fileName(base: baseName, label: $0.label), text: $0.text) }

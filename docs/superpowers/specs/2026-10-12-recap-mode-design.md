@@ -200,3 +200,9 @@ Swift Testing in `Audio TranscribeTests`.
 ## Documentation
 
 - README: a **Recap** feature bullet, a note on the Apple Intelligence requirement, and the new files in the project-structure table.
+
+## Revisions after first use (2026-10-12)
+
+- **Headline instead of a summary paragraph.** On real transcripts the 1–3 sentence summaries opened with "The conversation discusses…" or "The episode…" 15 times in 18, whatever the instructions said about how to start. A headline of at most 12 words (30 characters in Japanese) plus key points never did. `RecapContent` is now `headline` + `keyPoints`.
+- **Summary of the whole conversation** (this reverses the "no overall summary" scope). When a live session ends, its successful recaps are combined into one headline and key points (skipped with fewer than two recaps). A transcribed file is summarized from its whole transcript. The summary is pinned at the top of the Recap panel, with Copy and Summarize again, and the panel now also shows in File mode. Recaps and chunks are merged in groups of at most 8, round after round, so long inputs stay inside the context window.
+- **Export** (this reverses the "no export of recaps" non-goal). The combined `.txt` starts with `Summary` and `Recaps` sections, then a `----` line, then the transcript. Per-source files are unchanged.
