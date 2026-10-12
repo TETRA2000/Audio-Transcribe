@@ -285,3 +285,63 @@ struct TranscriptionViewModelTests {
         }
     }
 }
+
+@Suite(.timeLimit(.minutes(1)))
+struct TranscriptionViewModelRecapTests {
+    /// A "recording" view model whose transcript has enough words for a recap. With no channels,
+    /// `segments` reads `fileSegments`, so the tests can supply a transcript without running audio.
+    private func makeViewModel(_ generator: FakeRecapGenerator) -> TranscriptionViewModel {
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+        viewModel.status = .recording
+        return viewModel
+    }
+
+    @Test func stopMakesTheFinalRecap() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = makeViewModel(generator)
+
+        await viewModel.stop()
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.recap.entries.count == 1)
+        #expect(viewModel.recap.entries.first?.isFinal == true)
+        #expect(viewModel.recap.hasEnded)
+    }
+
+    @Test func recapFailureLeavesStatusAlone() async {
+        let generator = FakeRecapGenerator()
+        generator.results = [.failure(FakeRecapError())]
+        let viewModel = makeViewModel(generator)
+
+        await viewModel.stop()
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.recap.entries.first?.state == .failed(message: "Boom"))
+    }
+
+    @Test func clearRemovesRecaps() async {
+        let viewModel = makeViewModel(FakeRecapGenerator())
+        await viewModel.stop()
+
+        viewModel.clear()
+
+        #expect(viewModel.recap.entries.isEmpty)
+        #expect(!viewModel.recap.hasEnded)
+    }
+
+    @Test func retryRecapRerunsTheFailedWindow() async {
+        let generator = FakeRecapGenerator()
+        let retried = RecapContent(summary: "Retried", keyPoints: [])
+        generator.results = [.failure(FakeRecapError()), .success(retried)]
+        let viewModel = makeViewModel(generator)
+        await viewModel.stop()
+
+        viewModel.retryRecap(viewModel.recap.entries[0].id)
+        await viewModel.recap.waitForIdle()
+
+        #expect(viewModel.recap.entries.count == 1)
+        #expect(viewModel.recap.entries[0].content == retried)
+    }
+}

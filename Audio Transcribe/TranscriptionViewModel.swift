@@ -55,6 +55,18 @@ final class TranscriptionViewModel {
     /// Download progress for the on-device language model, when a download is needed.
     var modelDownloadProgress: Progress?
 
+    /// Recaps of the live session, made on device while recording.
+    let recap: RecapScheduler
+    /// How often the recap scheduler is asked whether a recap is due.
+    static let recapTickInterval: Duration = .seconds(30)
+    @ObservationIgnored private var recapTicker: Task<Void, Never>?
+
+    /// `recapGenerator` defaults to the on-device model. It is built here rather than as a default argument, which
+    /// would be evaluated outside the main actor.
+    init(recapGenerator: (any RecapGenerating)? = nil) {
+        recap = RecapScheduler(generator: recapGenerator ?? SystemRecapGenerator())
+    }
+
     var supportsSystemAudio: Bool {
         #if os(macOS)
         true
@@ -154,13 +166,17 @@ final class TranscriptionViewModel {
         do {
             try await prepareAssets()
             channels = newChannels
+            let sessionStart = Date()
             try await LiveChannel.startAll(
                 newChannels,
                 language: language,
-                sessionStart: Date(),
+                sessionStart: sessionStart,
                 labelSegments: newChannels.count > 1
             )
             status = Self.statusAfterStarting(current: status, anyChannelRunning: newChannels.contains(where: \.isRunning))
+            if isRecording {
+                startRecaps(sessionStart: sessionStart)
+            }
         } catch {
             channels = []
             status = .failed(error.localizedDescription)
@@ -174,6 +190,8 @@ final class TranscriptionViewModel {
         } catch {
             status = .failed(error.localizedDescription)
         }
+        // After the channels have drained, so the final recap includes the last segments.
+        await endRecaps()
     }
 
     /// The status to report once `startAll` finishes: unless a channel already failed while `startAll` was
@@ -215,6 +233,13 @@ final class TranscriptionViewModel {
         fileSegments = []
         fileVolatileText = ""
         channelWarning = nil
+        recapTicker?.cancel()
+        recapTicker = nil
+        recap.clear()
+    }
+
+    func retryRecap(_ id: UUID) {
+        recap.retry(id, segments: segments)
     }
 
     func exportFiles(_ kind: ExportKind, baseName: String) -> [ExportFile] {
@@ -299,6 +324,7 @@ final class TranscriptionViewModel {
         channelWarning = Self.warning(for: channel.kind, othersStillRunning: othersStillRunning)
         if !othersStillRunning, isRecording {
             status = .idle
+            Task { await endRecaps() }
         }
     }
 
@@ -307,7 +333,28 @@ final class TranscriptionViewModel {
         let channels = self.channels
         Task {
             try? await LiveChannel.stopAll(channels)
+            await endRecaps()
         }
+    }
+
+    /// Starts a fresh recap session and asks the scheduler every `recapTickInterval` whether a recap is due.
+    private func startRecaps(sessionStart: Date) {
+        recap.reset(language: language)
+        recapTicker?.cancel()
+        recapTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.recapTickInterval)
+                guard let self, !Task.isCancelled, self.isRecording else { return }
+                self.recap.tick(now: Date().timeIntervalSince(sessionStart), segments: self.segments)
+            }
+        }
+    }
+
+    /// Stops the ticker and makes the final recap. Calling it again does nothing: `finish` runs once per session.
+    private func endRecaps() async {
+        recapTicker?.cancel()
+        recapTicker = nil
+        await recap.finish(segments: segments)
     }
 
     private func prepareAssets() async throws {
