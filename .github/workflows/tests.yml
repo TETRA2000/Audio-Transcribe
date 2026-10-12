@@ -29,7 +29,7 @@ jobs:
       - name: Build for testing
         run: |
           xcodebuild build-for-testing \
-            -scheme "Audio Transcribe" \
+            -scheme "Transcripta" \
             -destination 'platform=macOS' \
             -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
@@ -73,5 +73,5 @@ jobs:
           xcodebuild test-without-building \
             -xctestrun Products/*.xctestrun \
             -destination 'platform=macOS' \
-            -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests" \
-            -skip-testing:"Audio TranscribeTests/RecapModelTests"
+            -skip-testing:"TranscriptaTests/TranscriptionEngineTests" \
+            -skip-testing:"TranscriptaTests/RecapModelTests"
