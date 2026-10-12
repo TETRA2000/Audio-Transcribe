@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct RecapGeneratorTests {
     @Test func chunksKeepLinesThatFitTogether() {

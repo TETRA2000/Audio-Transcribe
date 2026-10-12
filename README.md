@@ -1,4 +1,4 @@
-# Audio Transcribe
+# Transcripta
 
 A SwiftUI app that transcribes speech on-device with Apple's Speech framework (`SpeechAnalyzer` + `SpeechTranscriber`). It can transcribe from the microphone, from everything your Mac is playing, or from audio and video files. It supports English and Japanese.
 

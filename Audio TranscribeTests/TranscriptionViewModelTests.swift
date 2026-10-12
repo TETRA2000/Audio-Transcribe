@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct TranscriptionViewModelTests {
     @Test func startsInLiveModeWithOnlyTheMicrophoneOn() {

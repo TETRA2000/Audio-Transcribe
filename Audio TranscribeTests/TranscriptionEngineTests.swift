@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 /// Runs the real on-device transcriber against short synthesized clips in `Fixtures/`.
 /// Skipped where the Speech models aren't supported (e.g. the Simulator or older hardware).

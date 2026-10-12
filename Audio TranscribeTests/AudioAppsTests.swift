@@ -2,7 +2,7 @@
 import CoreAudio
 import Foundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct AudioAppsTests {
     private let ownBundleID = "com.example.AudioTranscribe"

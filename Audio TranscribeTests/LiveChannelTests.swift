@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct LiveChannelTests {
     private func makeChannel(_ source: FakeSource, _ transcriber: FakeTranscriber, label: String = "Zoom") -> LiveChannel {

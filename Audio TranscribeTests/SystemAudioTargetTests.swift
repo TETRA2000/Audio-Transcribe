@@ -1,5 +1,5 @@
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 #if os(macOS)
 import CoreAudio
 #endif

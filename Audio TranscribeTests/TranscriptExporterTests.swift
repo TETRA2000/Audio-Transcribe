@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct TranscriptExporterTests {
     private func entry(_ start: TimeInterval, _ end: TimeInterval, _ state: RecapEntry.State) -> RecapEntry {

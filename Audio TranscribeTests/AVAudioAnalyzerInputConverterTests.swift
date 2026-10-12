@@ -1,7 +1,7 @@
 import AVFoundation
 import Speech
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 /// `AVAudioAnalyzerInputConverter` stands in for `AnalyzerInputConverter` on macOS 26, so it must hand the
 /// analyzer every captured frame, resampled into the analyzer's format.

@@ -1,5 +1,5 @@
 import Foundation
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 struct FakeRecapError: LocalizedError {
     var errorDescription: String? { "Boom" }

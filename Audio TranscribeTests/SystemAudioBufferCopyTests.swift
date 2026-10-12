@@ -1,7 +1,7 @@
 #if os(macOS)
 import AVFoundation
 import Testing
-@testable import Audio_Transcribe
+@testable import Transcripta
 
 /// `SystemAudioSource.copyBuffer` must deep-copy Core Audio's buffer list, because the IOProc's
 /// `inputData` is only valid for the duration of the callback.
