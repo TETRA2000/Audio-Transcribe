@@ -285,3 +285,101 @@ struct TranscriptionViewModelTests {
         }
     }
 }
+
+@Suite(.timeLimit(.minutes(1)))
+struct TranscriptionViewModelRecapTests {
+    /// A "recording" view model whose transcript has enough words for a recap. With no channels,
+    /// `segments` reads `fileSegments`, so the tests can supply a transcript without running audio.
+    private func makeViewModel(_ generator: FakeRecapGenerator) -> TranscriptionViewModel {
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+        viewModel.status = .recording
+        return viewModel
+    }
+
+    @Test func stopMakesTheFinalRecap() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = makeViewModel(generator)
+
+        await viewModel.stop()
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.recap.entries.count == 1)
+        #expect(viewModel.recap.entries.first?.isFinal == true)
+        #expect(viewModel.recap.hasEnded)
+    }
+
+    @Test func recapFailureLeavesStatusAlone() async {
+        let generator = FakeRecapGenerator()
+        generator.results = [.failure(FakeRecapError())]
+        let viewModel = makeViewModel(generator)
+
+        await viewModel.stop()
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.recap.entries.first?.state == .failed(message: "Boom"))
+    }
+
+    @Test func clearRemovesRecaps() async {
+        let viewModel = makeViewModel(FakeRecapGenerator())
+        await viewModel.stop()
+
+        viewModel.clear()
+
+        #expect(viewModel.recap.entries.isEmpty)
+        #expect(!viewModel.recap.hasEnded)
+    }
+
+    @Test func retryRecapRerunsTheFailedWindow() async {
+        let generator = FakeRecapGenerator()
+        let retried = RecapContent(headline: "Retried", keyPoints: [])
+        generator.results = [.failure(FakeRecapError()), .success(retried)]
+        let viewModel = makeViewModel(generator)
+        await viewModel.stop()
+
+        viewModel.retryRecap(viewModel.recap.entries[0].id)
+        await viewModel.recap.waitForIdle()
+
+        #expect(viewModel.recap.entries.count == 1)
+        #expect(viewModel.recap.entries[0].content == retried)
+    }
+
+    @Test func lateEndFromAnEarlierSessionLeavesTheNewSessionRunning() async {
+        let viewModel = TranscriptionViewModel(recapGenerator: FakeRecapGenerator())
+        viewModel.fileSegments = [speech(40, at: 0)]
+        viewModel.startRecaps(sessionStart: Date())
+        let earlierSession = viewModel.recap.session
+
+        // The user pressed Start again before the failed session's channels finished draining.
+        viewModel.startRecaps(sessionStart: Date())
+        await viewModel.endRecaps(session: earlierSession)
+
+        #expect(!viewModel.recap.hasEnded)
+        #expect(viewModel.recap.entries.isEmpty)
+    }
+
+    @Test func summarizeAgainUsesTheFileTranscriptWhenThereAreNoChannels() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+
+        await viewModel.summarizeAgain()
+
+        #expect(generator.calls.map(\.lines) == [TranscriptSegment.lines(viewModel.fileSegments)])
+        #expect(viewModel.recap.overview == .done(RecapContent(headline: "Summary 1", keyPoints: ["Point"])))
+    }
+
+    @Test func exportStartsWithTheSummaries() async {
+        let generator = FakeRecapGenerator()
+        let viewModel = TranscriptionViewModel(recapGenerator: generator)
+        viewModel.recap.reset(language: .english)
+        viewModel.fileSegments = [speech(40, at: 0)]
+        await viewModel.summarizeAgain()
+
+        let text = viewModel.exportFiles(.combined, baseName: "T").first?.text ?? ""
+
+        #expect(text.hasPrefix("Summary\nSummary 1\n- Point\n\n----\n\n[00:00] word"))
+    }
+}

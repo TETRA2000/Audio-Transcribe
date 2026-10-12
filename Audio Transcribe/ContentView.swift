@@ -1,10 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-#endif
 
 struct ContentView: View {
     private enum ImportPurpose {
@@ -25,6 +20,11 @@ struct ContentView: View {
     @State private var isExportingFile = false
     @State private var exportDocument = PlainTextDocument(text: "")
     @State private var exportFileName = ""
+    #if os(macOS)
+    @State private var showsRecap = true
+    #else
+    @State private var showsRecap = false
+    #endif
 
     private var isLocked: Bool { viewModel.isRecording || viewModel.isBusy }
 
@@ -35,6 +35,17 @@ struct ContentView: View {
             statusBar
             Divider()
             transcriptView
+        }
+        .inspector(isPresented: $showsRecap) {
+            RecapView(
+                scheduler: viewModel.recap,
+                isRecording: viewModel.isRecording,
+                isFileMode: viewModel.mode == .file,
+                onRetry: { id in viewModel.retryRecap(id) },
+                onSummarizeAgain: { Task { await viewModel.summarizeAgain() } }
+            )
+            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
+            .presentationDragIndicator(.visible)
         }
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 440)
@@ -83,7 +94,16 @@ struct ContentView: View {
             .pickerStyle(.segmented)
             .disabled(isLocked)
 
-            actionButton
+            HStack {
+                actionButton
+                Spacer()
+                Button {
+                    showsRecap.toggle()
+                } label: {
+                    Label("Recap", systemImage: "sidebar.trailing")
+                }
+                .help(showsRecap ? "Hide recaps" : "Show recaps")
+            }
         }
         .padding()
     }
@@ -185,42 +205,12 @@ struct ContentView: View {
     }
 
     private var transcriptView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.segments) { segment in
-                        transcriptRow(segment)
-                            .id(segment.id)
-                    }
-                    ForEach(viewModel.volatileLines) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            if let label = line.label {
-                                speakerTag(label)
-                            }
-                            Text(line.text.trimmingCharacters(in: .whitespaces))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Color.clear
-                        .frame(height: 0)
-                        .id("volatile")
-                }
-                .padding()
-            }
-            .onChange(of: viewModel.segments.count) {
-                withAnimation {
-                    proxy.scrollTo(viewModel.segments.last?.id, anchor: .bottom)
+        TranscriptList(viewModel: viewModel)
+            .safeAreaInset(edge: .bottom) {
+                if !viewModel.segments.isEmpty {
+                    transcriptActions
                 }
             }
-            .onChange(of: viewModel.volatileLines) {
-                proxy.scrollTo("volatile", anchor: .bottom)
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if !viewModel.segments.isEmpty {
-                transcriptActions
-            }
-        }
     }
 
     private var transcriptActions: some View {
@@ -235,7 +225,7 @@ struct ContentView: View {
                 exportControl
             }
             Button {
-                copyToClipboard(viewModel.fullText)
+                Pasteboard.copy(viewModel.fullText)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
@@ -278,39 +268,6 @@ struct ContentView: View {
     private func chooseExportFolder(for kind: ExportKind) {
         importPurpose = .exportFolder(kind)
         isImporting = true
-    }
-
-    private func transcriptRow(_ segment: TranscriptSegment) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(segment.formattedStart)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            if let speaker = segment.speaker {
-                speakerTag(speaker)
-            }
-            Text(segment.text.trimmingCharacters(in: .whitespaces))
-        }
-    }
-
-    /// A small colored label: the first source (the microphone when enabled) uses the accent color, others orange.
-    private func speakerTag(_ speaker: String) -> some View {
-        let color: Color = speaker == viewModel.channels.first?.label ? .accentColor : .orange
-        return Text(speaker)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: .capsule)
-    }
-
-    private func copyToClipboard(_ text: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #else
-        UIPasteboard.general.string = text
-        #endif
     }
 }
 

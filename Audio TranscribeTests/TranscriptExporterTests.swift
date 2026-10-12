@@ -3,6 +3,57 @@ import Testing
 @testable import Audio_Transcribe
 
 struct TranscriptExporterTests {
+    private func entry(_ start: TimeInterval, _ end: TimeInterval, _ state: RecapEntry.State) -> RecapEntry {
+        RecapEntry(id: UUID(), windowStart: start, windowEnd: end, segmentIDs: [], isFinal: false, state: state)
+    }
+
+    @Test func summaryHeaderListsTheSummaryThenEachRecap() {
+        let header = TranscriptExporter.summaryHeader(
+            overview: RecapContent(headline: "Vendor pick narrows to two", keyPoints: ["Rollout Feb 3"]),
+            recaps: [
+                entry(0, 303, .done(RecapContent(headline: "Larkspur is cheaper", keyPoints: ["18% less", "Business hours only"]))),
+                entry(303, 609, .failed(message: "The on-device model declined the request.")),
+                entry(609, 900, .done(RecapContent(headline: "Demo on Thursday", keyPoints: []))),
+            ]
+        )
+        #expect(header == """
+            Summary
+            Vendor pick narrows to two
+            - Rollout Feb 3
+
+            Recaps
+            [00:00 – 05:03] Larkspur is cheaper
+            - 18% less
+            - Business hours only
+
+            [05:03 – 10:09] Couldn't summarize this part.
+
+            [10:09 – 15:00] Demo on Thursday
+            """)
+    }
+
+    @Test func summaryHeaderLeavesOutMissingSections() {
+        #expect(TranscriptExporter.summaryHeader(overview: nil, recaps: [entry(0, 60, .done(RecapContent(headline: "H", keyPoints: [])))])
+            == "Recaps\n[00:00 – 01:00] H")
+        #expect(TranscriptExporter.summaryHeader(overview: RecapContent(headline: "H", keyPoints: []), recaps: []) == "Summary\nH")
+        #expect(TranscriptExporter.summaryHeader(overview: nil, recaps: []) == nil)
+    }
+
+    @Test func onlyTheCombinedFileStartsWithTheSummaries() {
+        let files = TranscriptExporter.files(
+            .combinedAndSeparate,
+            baseName: "T",
+            combined: TranscriptSegment.merged([mic, app]),
+            channels: [(label: "You", segments: mic), (label: "Zoom", segments: app)],
+            header: "Summary\nH"
+        )
+        #expect(files.map(\.text) == [
+            "Summary\nH\n\n----\n\n[00:00] You: Hello.\n[00:02] Zoom: Hi.",
+            "[00:00] Hello.",
+            "[00:02] Hi.",
+        ])
+    }
+
     private let mic = [TranscriptSegment(start: 0, end: 1, text: " Hello.", speaker: "You")]
     private let app = [TranscriptSegment(start: 2, end: 3, text: " Hi.", speaker: "Zoom")]
 
