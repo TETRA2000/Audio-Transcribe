@@ -111,12 +111,7 @@ final class TranscriptionViewModel {
     var fullText: String {
         let segments = self.segments
         if segments.contains(where: { $0.speaker != nil }) {
-            return segments
-                .map { segment in
-                    let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return segment.speaker.map { "\($0): \(text)" } ?? text
-                }
-                .joined(separator: "\n")
+            return TranscriptSegment.lines(segments).joined(separator: "\n")
         }
         return segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }

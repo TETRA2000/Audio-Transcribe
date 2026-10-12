@@ -69,3 +69,26 @@ struct TranscriptMergeTests {
         #expect(TranscriptSegment.merged([[], []]).isEmpty)
     }
 }
+
+struct TranscriptLinesTests {
+    @Test(arguments: [(0.0, "00:00"), (605.0, "10:05"), (3725.0, "62:05"), (-1.0, "--:--"), (Double.nan, "--:--")])
+    func formattedTime(seconds: TimeInterval, expected: String) {
+        #expect(TranscriptSegment.formatted(seconds) == expected)
+    }
+
+    @Test func linesLabelSpeakersAndTrimText() {
+        let segments = [
+            TranscriptSegment(start: 0, end: 1, text: " Hello. ", speaker: "You"),
+            TranscriptSegment(start: 1, end: 2, text: " Hi.", speaker: "Zoom"),
+        ]
+        #expect(TranscriptSegment.lines(segments) == ["You: Hello.", "Zoom: Hi."])
+    }
+
+    @Test func linesWithoutSpeakersAreJustTheText() {
+        let segments = [
+            TranscriptSegment(start: 0, end: 1, text: " The quick"),
+            TranscriptSegment(start: 1, end: 2, text: "こんにちは。"),
+        ]
+        #expect(TranscriptSegment.lines(segments) == ["The quick", "こんにちは。"])
+    }
+}
