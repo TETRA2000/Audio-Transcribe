@@ -1,0 +1,39 @@
+import Foundation
+import FoundationModels
+import Testing
+@testable import Audio_Transcribe
+
+/// Runs the real on-device model. Skipped where Apple Intelligence isn't available, including GitHub's macOS VMs.
+@Suite(.timeLimit(.minutes(2)))
+struct RecapModelTests {
+    static let english = [
+        "You: Thanks for joining. We need to pick a ticketing vendor before December 31.",
+        "Zoom: The shortlist is Northwind and Larkspur. Larkspur is about 18 percent cheaper.",
+        "You: Larkspur only offers business-hours support, which is a problem for the Tokyo team.",
+        "Zoom: I'll email Dana at Larkspur today to ask about an overnight support tier.",
+        "You: Great. Let's aim for a rollout on February 3 if they say yes.",
+    ]
+
+    static let japanese = [
+        "You: 本日はありがとうございます。12月31日までにチケット管理ツールを決める必要があります。",
+        "Zoom: 候補はノースウィンドとラークスパーの二社です。ラークスパーの方が約18パーセント安いです。",
+        "You: ただ、ラークスパーのサポートは平日日中のみで、東京チームには問題です。",
+        "Zoom: 今日中にラークスパーの担当者に夜間サポートについて問い合わせます。",
+        "You: よろしくお願いします。問題なければ2月3日の導入を目指しましょう。",
+    ]
+
+    @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
+    func recapsEnglish() async throws {
+        let content = try await SystemRecapGenerator().recap(lines: Self.english, earlier: nil, language: .english)
+        #expect(!content.summary.isEmpty)
+        #expect(content.keyPoints.count <= 6)
+    }
+
+    @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
+    func recapsJapanese() async throws {
+        let content = try await SystemRecapGenerator().recap(lines: Self.japanese, earlier: "They opened the vendor review.", language: .japanese)
+        #expect(!content.summary.isEmpty)
+        #expect(content.keyPoints.count <= 6)
+        #expect(content.summary.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) })
+    }
+}

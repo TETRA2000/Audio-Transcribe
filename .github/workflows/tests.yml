@@ -66,11 +66,12 @@ jobs:
         run: tar -xzf products.tgz
       - name: OS and Xcode
         run: sw_vers && xcodebuild -version
-      # TranscriptionEngineTests need the on-device Speech models, which GitHub's macOS VMs don't
-      # support (they skip themselves there), so leave them to local runs.
+      # TranscriptionEngineTests need the on-device Speech models and RecapModelTests need Apple Intelligence,
+      # neither of which GitHub's macOS VMs support (both skip themselves there), so leave them to local runs.
       - name: Unit tests
         run: |
           xcodebuild test-without-building \
             -xctestrun Products/*.xctestrun \
             -destination 'platform=macOS' \
-            -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests"
+            -skip-testing:"Audio TranscribeTests/TranscriptionEngineTests" \
+            -skip-testing:"Audio TranscribeTests/RecapModelTests"
