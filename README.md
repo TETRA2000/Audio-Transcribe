@@ -77,8 +77,8 @@ GitHub Actions (`.github/workflows/tests.yml`) builds the tests once with Xcode 
 | `TranscriptionViewModel.swift` | An `@Observable` `@MainActor` view model that coordinates mode, sources, language, status, and the merged transcript. |
 | `TranscriptSegment.swift` | One finalized transcript line (text, start and end times, optional speaker), plus merging of several sources by time. |
 | `TranscriptExporter.swift` | Formats combined and per-source `.txt` exports and writes them without overwriting existing files. |
-| `Recap.swift` | Recap data: the model's `RecapContent` (`@Generable`), `RecapEntry`, the interval presets, and Apple Intelligence availability. |
-| `RecapGenerator.swift` | Makes one recap with the on-device model (`FoundationModels`): a fresh session per call, chunking of long windows, and a merge step. |
+| `Recap.swift` | Recap data: `RecapContent` (summary and key points), `RecapEntry`, the interval presets, and Apple Intelligence availability. |
+| `RecapGenerator.swift` | Makes one recap with the on-device model (`FoundationModels`): a fresh session per call with the guardrails meant for summarizing user content, a plain-text reply in a fixed format that it parses, chunking of long windows, and a merge step. |
 | `RecapScheduler.swift` | Decides when a recap is due and which segments it covers (tracked by segment ID), keeps the append-only list, and handles the final recap and Retry. |
 | `RecapView.swift` | The Recap side panel. |
 | `Pasteboard.swift` | Copies text to the clipboard on each platform. |

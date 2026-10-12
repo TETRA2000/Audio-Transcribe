@@ -91,4 +91,54 @@ struct RecapGeneratorTests {
         #expect(RecapInterval.five.menuLabel == "5 minutes")
         #expect(RecapInterval.fifteen.shortLabel == "Every 15 min")
     }
+
+    @Test func parsesAFormattedReply() {
+        let reply = "Summary: They compared two vendors. Larkspur is cheaper.\nKey points:\n- Shortlist: Northwind, Larkspur\n- Rollout Feb 3"
+        #expect(SystemRecapGenerator.parse(reply)
+            == RecapContent(summary: "They compared two vendors. Larkspur is cheaper.", keyPoints: ["Shortlist: Northwind, Larkspur", "Rollout Feb 3"]))
+    }
+
+    @Test func parseToleratesBlankLinesSpacesAndOtherBullets() {
+        let reply = "  summary:   A.  \n\nKey Points:\n\n  • x  \n* y\n- z\n"
+        #expect(SystemRecapGenerator.parse(reply) == RecapContent(summary: "A.", keyPoints: ["x", "y", "z"]))
+    }
+
+    @Test func parseJoinsASummaryOverSeveralLines() {
+        #expect(SystemRecapGenerator.parse("Summary: A.\nB.\nKey points:\n- x")
+            == RecapContent(summary: "A. B.", keyPoints: ["x"]))
+    }
+
+    @Test func parseWithoutKeyPoints() {
+        #expect(SystemRecapGenerator.parse("Summary: A.") == RecapContent(summary: "A.", keyPoints: []))
+    }
+
+    @Test func parseKeepsAnUnformattedReplyAsTheSummary() {
+        #expect(SystemRecapGenerator.parse("\nThey talked about grids.\n")
+            == RecapContent(summary: "They talked about grids.", keyPoints: []))
+    }
+
+    @Test(arguments: [("概要", "キーポイント", ":"), ("要約", "重要なポイント", "："), ("まとめ", "要点", ":")])
+    func parsesJapaneseLabels(summary: String, keyPoints: String, colon: String) {
+        let reply = "\(summary)\(colon) 導入は2月3日を目指します。\n\n\(keyPoints)\(colon)\n- 期限: 12月31日\n- 候補: ノースウィンド、ラークスパー"
+        #expect(SystemRecapGenerator.parse(reply)
+            == RecapContent(summary: "導入は2月3日を目指します。", keyPoints: ["期限: 12月31日", "候補: ノースウィンド、ラークスパー"]))
+    }
+
+    @Test func parseKeepsAtMostSixKeyPoints() {
+        let reply = "Summary: A.\nKey points:\n" + (1...8).map { "- p\($0)" }.joined(separator: "\n")
+        #expect(SystemRecapGenerator.parse(reply).keyPoints == ["p1", "p2", "p3", "p4", "p5", "p6"])
+    }
+
+    @Test func instructionsAskForTheReplyFormat() {
+        for instructions in [SystemRecapGenerator.instructions(for: .japanese), SystemRecapGenerator.mergeInstructions(for: .english)] {
+            #expect(instructions.contains("Summary: <1 to 3 sentences>\nKey points:\n- <point>"))
+        }
+    }
+
+    @Test func refusalsAreReportedAsDeclined() {
+        if #available(macOS 27.0, iOS 27.0, visionOS 27.0, *) {
+            let refusal = LanguageModelError.refusal(.init(explanation: "", debugDescription: "May contain sensitive content"))
+            #expect(RecapErrors.message(for: refusal) == "The on-device model declined the request.")
+        }
+    }
 }

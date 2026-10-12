@@ -22,17 +22,35 @@ struct RecapModelTests {
         "You: よろしくお願いします。問題なければ2月3日の導入を目指しましょう。",
     ]
 
+    /// Harmless, but structured (`@Generable`) generation refused it as "May contain sensitive content" every time.
+    static let anxious = [
+        "We're headed somewhere, and it's not clear yet whether it's a good place or a bad one.",
+        "Honestly, I'm scared.",
+        "Not about the usual things people mention, like a cyberattack or a market crash or machines taking over.",
+        "What worries me is what my work means if a computer can do it better.",
+        "It's a question about purpose, about what it means to be a person who does math.",
+        "So let's just talk about it.",
+    ]
+
     @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
     func recapsEnglish() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.english, earlier: nil, language: .english)
         #expect(!content.summary.isEmpty)
+        #expect(!content.keyPoints.isEmpty)
         #expect(content.keyPoints.count <= 6)
+    }
+
+    @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
+    func recapsAnAnxiousButHarmlessConversation() async throws {
+        let content = try await SystemRecapGenerator().recap(lines: Self.anxious, earlier: nil, language: .english)
+        #expect(!content.summary.isEmpty)
     }
 
     @Test(.enabled("Apple Intelligence is available") { SystemLanguageModel.default.availability == .available })
     func recapsJapanese() async throws {
         let content = try await SystemRecapGenerator().recap(lines: Self.japanese, earlier: "They opened the vendor review.", language: .japanese)
         #expect(!content.summary.isEmpty)
+        #expect(!content.keyPoints.isEmpty)
         #expect(content.keyPoints.count <= 6)
         #expect(content.summary.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) })
     }

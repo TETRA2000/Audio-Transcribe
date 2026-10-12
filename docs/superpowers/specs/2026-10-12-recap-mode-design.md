@@ -56,12 +56,9 @@ Four new files in `Audio Transcribe/`, each with one job.
 ### `Recap.swift`: data model
 
 ```swift
-@Generable
 struct RecapContent: Equatable, Sendable {
-    @Guide(description: "1–3 sentences summarizing this part of the conversation.")
-    var summary: String
-    @Guide(description: "Important names, numbers, dates, decisions and requests.", .maximumCount(6))
-    var keyPoints: [String]
+    var summary: String       // 1–3 sentences
+    var keyPoints: [String]   // at most 6
 }
 
 struct RecapEntry: Identifiable, Equatable {
@@ -96,7 +93,8 @@ enum RecapAvailability: Equatable {
 ```
 
 - `SystemRecapGenerator` maps `SystemLanguageModel.default.availability` to `RecapAvailability`.
-- It creates a new `LanguageModelSession(instructions:)` for each call and requests `RecapContent` with `respond(to:generating:)`.
+- It creates a new `LanguageModelSession` for each call, on `SystemLanguageModel(guardrails: .permissiveContentTransformations)`, and asks for a **plain-text reply** in a fixed format (`Summary: …` / `Key points:` / `- …`). `parse` reads that reply into `RecapContent`. It accepts the Japanese labels the model uses when answering in Japanese (`概要`, `キーポイント`, …), and a reply without a summary label becomes the summary as a whole.
+- *Revised 2026-10-12:* the first version used guided generation (`@Generable`, `respond(to:generating:)`). On real conversations that path refused ordinary content ("May contain sensitive content", `LanguageModelError.refusal`) about half the time, and the permissive guardrails apply only to plain-text replies. Refusals and guardrail violations are both reported as "The on-device model declined the request."
 - **Instructions:** "You summarize a live conversation transcript. Lines are `Speaker: text`. Write a 1–3 sentence summary and up to 6 key points: important names, numbers, dates, decisions and requests. Use only what's in the transcript. Respond in {English | Japanese}."
 - **Prompt:** an optional `Earlier: <previous summary>` line, followed by the window's lines.
 - **Chunking:** `static func chunks(_ lines: [String], budget: Int) -> [[String]]` packs whole lines up to the budget: **6,000 characters for English, 2,500 for Japanese**. A single line longer than the budget becomes a chunk of its own, truncated to the budget. With more than one chunk, each chunk is recapped, then one merge call summarizes the partial recaps. The merge call's prompt lists each part's summary and key points, and its instructions say "combine these partial recaps into one".

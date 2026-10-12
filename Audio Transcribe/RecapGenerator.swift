@@ -9,8 +9,13 @@ protocol RecapGenerating: AnyObject {
 
 /// Recaps with Apple Intelligence's on-device model. Each call uses fresh sessions, so context never builds up.
 /// Windows over the language's character budget are recapped in chunks, then merged with one more call.
+///
+/// The model replies in plain text in a fixed format that `parse` reads, rather than through guided generation
+/// (`@Generable`): guided generation refuses ordinary conversation as "May contain sensitive content", and the
+/// permissive guardrails meant for summarizing user content only apply to plain-text replies.
 final class SystemRecapGenerator: RecapGenerating {
     static let minimumChunkCharacters = 500
+    static let maximumKeyPoints = 6
 
     var availability: RecapAvailability {
         RecapAvailability(SystemLanguageModel.default.availability)
@@ -38,11 +43,56 @@ final class SystemRecapGenerator: RecapGenerating {
     }
 
     private func respond(instructions: String, prompt: String) async throws -> RecapContent {
-        let session = LanguageModelSession(instructions: instructions)
-        return try await session.respond(to: prompt, generating: RecapContent.self).content
+        let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+        let session = LanguageModelSession(model: model, instructions: instructions)
+        return Self.parse(try await session.respond(to: prompt).content)
     }
 
     // MARK: Pure helpers
+
+    /// Labels the model uses for the two parts of its reply. It is asked for the English ones, but translates them
+    /// when it answers in Japanese.
+    static let summaryLabels = ["summary", "概要", "要約", "まとめ"]
+    static let keyPointsLabels = ["key points", "キーポイント", "重要なポイント", "要点"]
+
+    /// Reads a reply in the `replyFormat`. Labels are matched without regard to case, with `:` or `：`, blank lines are
+    /// skipped, and `-`, `•` and `*` all count as bullets. A reply without a summary label becomes the summary as a whole.
+    static func parse(_ reply: String) -> RecapContent {
+        let lines = reply.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard let summaryIndex = lines.firstIndex(where: { text(after: summaryLabels, in: $0) != nil }) else {
+            return RecapContent(summary: reply.trimmingCharacters(in: .whitespacesAndNewlines), keyPoints: [])
+        }
+        let keyPointsIndex = lines[(summaryIndex + 1)...].firstIndex { text(after: keyPointsLabels, in: $0) != nil }
+        let firstLine = text(after: summaryLabels, in: lines[summaryIndex]) ?? ""
+        let summary = ([firstLine] + lines[(summaryIndex + 1)..<(keyPointsIndex ?? lines.endIndex)])
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        var keyPoints: [String] = []
+        if let keyPointsIndex {
+            for line in lines[(keyPointsIndex + 1)...] {
+                guard let bullet = line.first, "-•*".contains(bullet) else { continue }
+                let point = line.dropFirst().trimmingCharacters(in: .whitespaces)
+                if !point.isEmpty { keyPoints.append(point) }
+            }
+        }
+        return RecapContent(summary: summary, keyPoints: Array(keyPoints.prefix(maximumKeyPoints)))
+    }
+
+    /// The rest of `line` after one of `labels` and a colon, or `nil` when the line doesn't start with a label.
+    private static func text(after labels: [String], in line: String) -> String? {
+        for label in labels where line.lowercased().hasPrefix(label) {
+            let rest = line.dropFirst(label.count).drop { $0 == " " }
+            guard let colon = rest.first, colon == ":" || colon == "：" else { continue }
+            return rest.dropFirst().trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
+    static let replyFormat = "Reply in exactly this format, with no other text, and keep the labels \"Summary:\" and \"Key points:\" in English:\n"
+        + "Summary: <1 to 3 sentences>\nKey points:\n- <point>\n- <point>\n"
 
     static func budget(for language: TranscriptionLanguage) -> Int {
         switch language {
@@ -74,12 +124,15 @@ final class SystemRecapGenerator: RecapGenerating {
     static func instructions(for language: TranscriptionLanguage) -> String {
         "You summarize a live conversation transcript. Each line is \"Speaker: text\"; lines without a speaker come from a single source. "
             + "Write a summary of 1 to 3 sentences and up to 6 key points: important names, numbers, dates, decisions and requests. "
-            + "Use only what is in the transcript. Respond in \(language.responseLanguageName)."
+            + "Use only what is in the transcript. "
+            + replyFormat
+            + "Respond in \(language.responseLanguageName)."
     }
 
     static func mergeInstructions(for language: TranscriptionLanguage) -> String {
         "You combine partial recaps of consecutive parts of one conversation into a single recap. "
             + "Write a summary of 1 to 3 sentences and up to 6 key points, keeping the most important names, numbers, dates, decisions and requests. "
+            + replyFormat
             + "Respond in \(language.responseLanguageName)."
     }
 
@@ -118,13 +171,19 @@ enum RecapErrors {
         return false
     }
 
-    static func isGuardrailViolation(_ error: Error) -> Bool {
-        if #available(macOS 27.0, iOS 27.0, visionOS 27.0, *),
-           let error = error as? LanguageModelError, case .guardrailViolation = error {
-            return true
+    /// Whether the model declined: a guardrail violation or a refusal.
+    static func isDeclined(_ error: Error) -> Bool {
+        if #available(macOS 27.0, iOS 27.0, visionOS 27.0, *), let error = error as? LanguageModelError {
+            switch error {
+            case .guardrailViolation, .refusal: return true
+            default: break
+            }
         }
-        if let error = error as? LanguageModelSession.GenerationError, case .guardrailViolation = error {
-            return true
+        if let error = error as? LanguageModelSession.GenerationError {
+            switch error {
+            case .guardrailViolation, .refusal: return true
+            default: break
+            }
         }
         return false
     }
@@ -132,7 +191,7 @@ enum RecapErrors {
     /// The reason shown after "Couldn't summarize this part."
     static func message(for error: Error) -> String {
         if isContextOverflow(error) { return "This part was too long to summarize." }
-        if isGuardrailViolation(error) { return "The on-device model declined the request." }
+        if isDeclined(error) { return "The on-device model declined the request." }
         return error.localizedDescription
     }
 }

@@ -1,12 +1,9 @@
 import Foundation
 import FoundationModels
 
-/// What the on-device model returns for one window of the conversation.
-@Generable
+/// One recap's text: what `SystemRecapGenerator.parse` reads from the model's reply.
 nonisolated struct RecapContent: Equatable, Sendable {
-    @Guide(description: "A summary of this part of the conversation in 1 to 3 sentences.")
     var summary: String
-    @Guide(description: "Important names, numbers, dates, decisions and requests from this part.", .maximumCount(6))
     var keyPoints: [String]
 
     init(summary: String, keyPoints: [String]) {
