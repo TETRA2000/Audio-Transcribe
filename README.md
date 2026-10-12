@@ -32,9 +32,9 @@ System audio needs Core Audio process taps, which exist only on macOS. It is com
 
 ## Getting started
 
-1. Open `Audio Transcribe.xcodeproj`.
-2. Choose your development team under **Signing & Capabilities** for the `Audio Transcribe` target.
-3. Select the **Audio Transcribe** scheme and a destination (e.g. *My Mac*), then run (⌘R).
+1. Open `Transcripta.xcodeproj`.
+2. Choose your development team under **Signing & Capabilities** for the `Transcripta` target.
+3. Select the **Transcripta** scheme and a destination (e.g. *My Mac*), then run (⌘R).
 
 The first time you use each source, the system asks for permission:
 
@@ -48,13 +48,13 @@ The app runs in the App Sandbox with these entitlements:
 
 ## Tests
 
-Unit tests use Swift Testing and live in the `Audio TranscribeTests` target. Run them with ⌘U, or from the command line:
+Unit tests use Swift Testing and live in the `TranscriptaTests` target. Run them with ⌘U, or from the command line:
 
 ```sh
-xcodebuild test -scheme "Audio Transcribe" -destination 'platform=macOS'
+xcodebuild test -scheme "Transcripta" -destination 'platform=macOS'
 ```
 
-`TranscriptionEngineTests` runs the real transcriber on short English and Japanese clips in `Audio TranscribeTests/Fixtures/`:
+`TranscriptionEngineTests` runs the real transcriber on short English and Japanese clips in `TranscriptaTests/Fixtures/`:
 
 - It is skipped automatically where the Speech models are unavailable, such as the iOS Simulator.
 - The first run may download the language models.

@@ -16,8 +16,8 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "000000000000000100000000"
                BuildableName = "Transcripta.app"
-               BlueprintName = "Audio Transcribe"
-               ReferencedContainer = "container:Audio Transcribe.xcodeproj">
+               BlueprintName = "Transcripta"
+               ReferencedContainer = "container:Transcripta.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "000000000000000200000000"
-               BuildableName = "Audio TranscribeTests.xctest"
-               BlueprintName = "Audio TranscribeTests"
-               ReferencedContainer = "container:Audio Transcribe.xcodeproj">
+               BuildableName = "TranscriptaTests.xctest"
+               BlueprintName = "TranscriptaTests"
+               ReferencedContainer = "container:Transcripta.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -56,8 +56,8 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "000000000000000100000000"
             BuildableName = "Transcripta.app"
-            BlueprintName = "Audio Transcribe"
-            ReferencedContainer = "container:Audio Transcribe.xcodeproj">
+            BlueprintName = "Transcripta"
+            ReferencedContainer = "container:Transcripta.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -73,8 +73,8 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "000000000000000100000000"
             BuildableName = "Transcripta.app"
-            BlueprintName = "Audio Transcribe"
-            ReferencedContainer = "container:Audio Transcribe.xcodeproj">
+            BlueprintName = "Transcripta"
+            ReferencedContainer = "container:Transcripta.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
