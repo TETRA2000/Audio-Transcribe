@@ -20,6 +20,9 @@ final class RecapScheduler {
 
     var isGenerating: Bool { generatingWindow != nil }
 
+    /// Identifies the current session: it changes on every `reset` and `clear`.
+    var session: Int { generation }
+
     var nextRecapAt: TimeInterval? {
         guard availability == .available, !hasEnded else { return nil }
         return lastRecapAt + interval.seconds
@@ -58,6 +61,7 @@ final class RecapScheduler {
 
     /// Called periodically while recording. Recaps the uncovered segments once `interval` has passed.
     func tick(now: TimeInterval, segments: [TranscriptSegment]) {
+        refreshAvailability()
         guard availability == .available, !hasEnded, inFlight == nil,
               now - lastRecapAt >= interval.seconds else { return }
         lastRecapAt = now
@@ -72,6 +76,7 @@ final class RecapScheduler {
         await waitForIdle()
         guard generation == self.generation, !hasEnded else { return }
         hasEnded = true
+        refreshAvailability()
         guard availability == .available else { return }
         let window = uncovered(in: segments)
         guard Self.hasEnoughContent(window, language: language) else { return }
@@ -103,6 +108,14 @@ final class RecapScheduler {
         switch language {
         case .english: return text.split(whereSeparator: \.isWhitespace).count >= 30
         case .japanese: return text.filter { !$0.isWhitespace }.count >= 60
+        }
+    }
+
+    /// Picks up the model becoming available mid-session, such as a finished download or Apple Intelligence
+    /// turned on in System Settings.
+    private func refreshAvailability() {
+        if availability != .available {
+            availability = generator.availability
         }
     }
 

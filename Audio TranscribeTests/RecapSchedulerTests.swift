@@ -306,6 +306,24 @@ struct RecapSchedulerTests {
         #expect(generator.calls.count == 1)
     }
 
+    @Test func recapsStartOnceTheModelBecomesAvailable() async {
+        let generator = FakeRecapGenerator()
+        generator.availability = .modelNotReady
+        let scheduler = makeScheduler(generator)
+        let a = speech(40, at: 0)
+
+        scheduler.tick(now: 600, segments: [a])
+        await scheduler.waitForIdle()
+        #expect(generator.calls.isEmpty)
+
+        generator.availability = .available
+        scheduler.tick(now: 630, segments: [a])
+        await scheduler.waitForIdle()
+
+        #expect(scheduler.availability == .available)
+        #expect(generator.calls.count == 1)
+    }
+
     @Test func unavailableModelIsNeverCalled() async {
         let generator = FakeRecapGenerator()
         generator.availability = .appleIntelligenceOff

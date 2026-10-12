@@ -344,4 +344,18 @@ struct TranscriptionViewModelRecapTests {
         #expect(viewModel.recap.entries.count == 1)
         #expect(viewModel.recap.entries[0].content == retried)
     }
+
+    @Test func lateEndFromAnEarlierSessionLeavesTheNewSessionRunning() async {
+        let viewModel = TranscriptionViewModel(recapGenerator: FakeRecapGenerator())
+        viewModel.fileSegments = [speech(40, at: 0)]
+        viewModel.startRecaps(sessionStart: Date())
+        let earlierSession = viewModel.recap.session
+
+        // The user pressed Start again before the failed session's channels finished draining.
+        viewModel.startRecaps(sessionStart: Date())
+        await viewModel.endRecaps(session: earlierSession)
+
+        #expect(!viewModel.recap.hasEnded)
+        #expect(viewModel.recap.entries.isEmpty)
+    }
 }

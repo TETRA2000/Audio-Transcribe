@@ -184,6 +184,7 @@ final class TranscriptionViewModel {
     }
 
     func stop() async {
+        let recapSession = recap.session
         do {
             try await LiveChannel.stopAll(channels)
             status = Self.statusAfterStopping(current: status)
@@ -191,7 +192,7 @@ final class TranscriptionViewModel {
             status = .failed(error.localizedDescription)
         }
         // After the channels have drained, so the final recap includes the last segments.
-        await endRecaps()
+        await endRecaps(session: recapSession)
     }
 
     /// The status to report once `startAll` finishes: unless a channel already failed while `startAll` was
@@ -324,21 +325,23 @@ final class TranscriptionViewModel {
         channelWarning = Self.warning(for: channel.kind, othersStillRunning: othersStillRunning)
         if !othersStillRunning, isRecording {
             status = .idle
-            Task { await endRecaps() }
+            let recapSession = recap.session
+            Task { await endRecaps(session: recapSession) }
         }
     }
 
     private func liveTranscriptionDidFail(_ error: Error) {
         status = .failed(error.localizedDescription)
         let channels = self.channels
+        let recapSession = recap.session
         Task {
             try? await LiveChannel.stopAll(channels)
-            await endRecaps()
+            await endRecaps(session: recapSession)
         }
     }
 
     /// Starts a fresh recap session and asks the scheduler every `recapTickInterval` whether a recap is due.
-    private func startRecaps(sessionStart: Date) {
+    func startRecaps(sessionStart: Date) {
         recap.reset(language: language)
         recapTicker?.cancel()
         recapTicker = Task { [weak self] in
@@ -350,8 +353,11 @@ final class TranscriptionViewModel {
         }
     }
 
-    /// Stops the ticker and makes the final recap. Calling it again does nothing: `finish` runs once per session.
-    private func endRecaps() async {
+    /// Stops the ticker and makes the final recap for the recap session that was current when the recording
+    /// ended. Does nothing if a newer session has started since (Start pressed while the old channels were still
+    /// draining) or if this session already finished: `finish` runs once per session.
+    func endRecaps(session: Int) async {
+        guard session == recap.session else { return }
         recapTicker?.cancel()
         recapTicker = nil
         await recap.finish(segments: segments)
