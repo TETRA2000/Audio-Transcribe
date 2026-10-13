@@ -190,7 +190,7 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 180)
+                    .frame(width: 116)
                     .disabled(isLocked)
                 }
                 ToolbarItem(placement: .topBarLeading) {
@@ -206,7 +206,6 @@ struct ContentView: View {
                         showsRecap.toggle()
                     } label: {
                         Label("Recap", systemImage: "apple.intelligence")
-                            .labelStyle(.titleAndIcon)
                     }
                     transcriptMenu
                 }
@@ -222,7 +221,7 @@ struct ContentView: View {
                 }
             }
         } label: {
-            Text(viewModel.language.displayName)
+            Label(viewModel.language.displayName, systemImage: "globe")
         }
         .disabled(isLocked)
         .accessibilityLabel("Language: \(viewModel.language.displayName)")
