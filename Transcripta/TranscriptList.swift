@@ -37,12 +37,34 @@ struct TranscriptLines: View {
         segment.text.trimmingCharacters(in: .whitespaces)
     }
 
+    /// Match ranges by segment, and the current match, worked out once per body evaluation.
+    private struct Marks {
+        var ranges: [TranscriptSegment.ID: [Range<String.Index>]] = [:]
+        var currentID: TranscriptSegment.ID?
+        var currentRange: Range<String.Index>?
+    }
+
+    private func marks() -> Marks {
+        var marks = Marks()
+        guard let highlight else { return marks }
+        for (position, match) in highlight.matches.enumerated() where segments.indices.contains(match.text) {
+            let id = segments[match.text].id
+            marks.ranges[id, default: []].append(match.range)
+            if position == highlight.current {
+                marks.currentID = id
+                marks.currentRange = match.range
+            }
+        }
+        return marks
+    }
+
     var body: some View {
-        ScrollViewReader { proxy in
+        let marks = marks()
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
-                        transcriptRow(segment, index: index)
+                    ForEach(segments) { segment in
+                        transcriptRow(segment, marks: marks)
                             .id(segment.id)
                     }
                     ForEach(volatileLines) { line in
@@ -63,14 +85,13 @@ struct TranscriptLines: View {
             .defaultScrollAnchor(followsEnd ? .bottom : .top)
             .defaultScrollAnchor(followsEnd ? .bottom : nil, for: .sizeChanges)
             .onChange(of: highlight, initial: true) {
-                guard let highlight, highlight.matches.indices.contains(highlight.current) else { return }
-                let segment = segments[highlight.matches[highlight.current].text]
-                withAnimation { proxy.scrollTo(segment.id, anchor: .center) }
+                guard let id = marks.currentID else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }
 
-    private func transcriptRow(_ segment: TranscriptSegment, index: Int) -> some View {
+    private func transcriptRow(_ segment: TranscriptSegment, marks: Marks) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(segment.formattedStart)
                 .font(.caption.monospacedDigit())
@@ -79,17 +100,15 @@ struct TranscriptLines: View {
             if let speaker = segment.speaker {
                 speakerTag(speaker)
             }
-            Text(lineText(segment, index: index))
+            Text(lineText(segment, marks: marks))
                 .textSelection(.enabled)
         }
     }
 
-    private func lineText(_ segment: TranscriptSegment, index: Int) -> AttributedString {
+    private func lineText(_ segment: TranscriptSegment, marks: Marks) -> AttributedString {
         let text = Self.displayText(segment)
-        guard let highlight else { return AttributedString(text) }
-        let current = highlight.matches.indices.contains(highlight.current) ? highlight.matches[highlight.current] : nil
-        let ranges = highlight.matches.filter { $0.text == index }.map(\.range)
-        return SearchHighlight.marked(text, ranges: ranges, current: current?.text == index ? current?.range : nil)
+        guard let ranges = marks.ranges[segment.id] else { return AttributedString(text) }
+        return SearchHighlight.marked(text, ranges: ranges, current: marks.currentID == segment.id ? marks.currentRange : nil)
     }
 
     /// A small colored label: the primary speaker uses the accent color, others orange.
