@@ -179,6 +179,57 @@ struct TranscriptExporterTests {
         #expect(try String(contentsOf: urls[0], encoding: .utf8) == "new")
     }
 
+    @Test func savedMultiSourceSessionExportsLikeTheLiveOne() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [
+            makeIdleChannel(.microphone, label: "You", segments: [
+                TranscriptSegment(start: 0, end: 1, text: " Hello.", speaker: "You"),
+                TranscriptSegment(start: 4, end: 5, text: " Bye.", speaker: "You"),
+            ]),
+            makeIdleChannel(.systemAudio, label: "Zoom", segments: [TranscriptSegment(start: 2, end: 3, text: " Hi.", speaker: "Zoom")]),
+        ]
+        let snapshot = SessionSnapshot.make(
+            kind: .live, language: .english, startedAt: Date(), fileName: nil, sourceLabels: ["You", "Zoom"],
+            segments: viewModel.segments, recaps: [], overview: nil
+        )!
+        for kind in ExportKind.allCases {
+            #expect(
+                TranscriptExporter.files(kind, baseName: "T", content: snapshot.content, sourceLabels: snapshot.sourceLabels)
+                    == viewModel.exportFiles(kind, baseName: "T"),
+                "kind \(kind)"
+            )
+        }
+    }
+
+    @Test func savedSingleSourceSessionExportsLikeTheLiveOne() {
+        let viewModel = TranscriptionViewModel()
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You", segments: [TranscriptSegment(start: 0, end: 1, text: " Hello.")])]
+        let snapshot = SessionSnapshot.make(
+            kind: .live, language: .english, startedAt: Date(), fileName: nil, sourceLabels: ["You"],
+            segments: viewModel.segments, recaps: [], overview: nil
+        )!
+        for kind in ExportKind.allCases {
+            #expect(TranscriptExporter.files(kind, baseName: "T", content: snapshot.content, sourceLabels: ["You"]) == viewModel.exportFiles(kind, baseName: "T"))
+        }
+    }
+
+    @Test func savedSessionExportStartsWithItsSummaryAndRecaps() throws {
+        let content = SessionContent(
+            segments: [SessionContent.Segment(start: 0, end: 1, text: "Hi", speaker: nil)],
+            recaps: [SessionContent.Recap(windowStart: 0, windowEnd: 60, isFinal: true, headline: "R", keyPoints: [])],
+            overview: RecapContent(headline: "O", keyPoints: [])
+        )
+        let file = try #require(TranscriptExporter.files(.combined, baseName: "T", content: content, sourceLabels: []).first)
+        #expect(file.text == "Summary\nO\n\nRecaps\n[00:00 – 01:00] R\n\n----\n\n[00:00] Hi")
+    }
+
+    @Test func writeToPickedFolderWritesTheFiles() throws {
+        let folder = try makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let urls = try TranscriptExporter.write([ExportFile(name: "T.txt", text: "x")], toPickedFolder: folder)
+        #expect(urls.map(\.lastPathComponent) == ["T.txt"])
+    }
+
     private func makeTemporaryFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

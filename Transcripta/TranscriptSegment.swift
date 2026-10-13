@@ -26,6 +26,16 @@ struct TranscriptSegment: Identifiable, Sendable {
         }
     }
 
+    /// The transcript as plain text for Copy and Share. A single-source transcript is concatenated as-is: the
+    /// transcriber already includes leading spaces where the language needs them (English) and none where it doesn't
+    /// (Japanese). A multi-source transcript puts each segment on its own `Speaker: text` line.
+    static func plainText(_ segments: [TranscriptSegment]) -> String {
+        if segments.contains(where: { $0.speaker != nil }) {
+            return lines(segments).joined(separator: "\n")
+        }
+        return segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Merges several channels' segments into one timeline ordered by start time. Segments that start at the same
     /// time keep the order of `channels` (the microphone is listed first), then their order within the channel.
     static func merged(_ channels: [[TranscriptSegment]]) -> [TranscriptSegment] {

@@ -61,10 +61,23 @@ final class TranscriptionViewModel {
     static let recapTickInterval: Duration = .seconds(30)
     @ObservationIgnored private var recapTicker: Task<Void, Never>?
 
+    /// Where sessions are saved. `nil` when History couldn't be opened, and in tests that don't need it.
+    let history: (any HistorySaving)?
+    /// The History entry for the session on screen, once it has been saved.
+    private(set) var historyID: UUID?
+    /// Shown when the session couldn't be saved to History. Transcription carries on.
+    var historyWarning: String?
+    @ObservationIgnored private var historyStartedAt: Date?
+    @ObservationIgnored private var historyFileName: String?
+    @ObservationIgnored private var historyLanguage: TranscriptionLanguage = .english
+    /// What was last saved as `historyID`, so an unchanged checkpoint isn't written again.
+    @ObservationIgnored private var lastSavedSnapshot: SessionSnapshot?
+
     /// `recapGenerator` defaults to the on-device model. It is built here rather than as a default argument, which
     /// would be evaluated outside the main actor.
-    init(recapGenerator: (any RecapGenerating)? = nil) {
+    init(recapGenerator: (any RecapGenerating)? = nil, history: (any HistorySaving)? = nil) {
         recap = RecapScheduler(generator: recapGenerator ?? SystemRecapGenerator())
+        self.history = history
     }
 
     var supportsSystemAudio: Bool {
@@ -117,16 +130,8 @@ final class TranscriptionViewModel {
     /// Whether the transcript came from several sources, so it can be exported as separate files.
     var hasSeparateSources: Bool { channels.count > 1 }
 
-    /// The transcript as plain text for Copy and Share. A single-source transcript is concatenated as-is: the
-    /// transcriber already includes leading spaces where the language needs them (English) and none where it doesn't
-    /// (Japanese). A multi-source transcript puts each segment on its own `Speaker: text` line.
-    var fullText: String {
-        let segments = self.segments
-        if segments.contains(where: { $0.speaker != nil }) {
-            return TranscriptSegment.lines(segments).joined(separator: "\n")
-        }
-        return segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    /// The transcript as plain text for Copy and Share.
+    var fullText: String { TranscriptSegment.plainText(segments) }
 
     var isRecording: Bool {
         if case .recording = status { return true }
@@ -167,6 +172,7 @@ final class TranscriptionViewModel {
             try await prepareAssets()
             channels = newChannels
             let sessionStart = Date()
+            beginHistorySession(startedAt: sessionStart, fileName: nil)
             try await LiveChannel.startAll(
                 newChannels,
                 language: language,
@@ -211,6 +217,7 @@ final class TranscriptionViewModel {
 
     func transcribe(fileURL: URL) async {
         clear()
+        beginHistorySession(startedAt: Date(), fileName: fileURL.lastPathComponent)
 
         let accessed = fileURL.startAccessingSecurityScopedResource()
         defer { if accessed { fileURL.stopAccessingSecurityScopedResource() } }
@@ -226,18 +233,25 @@ final class TranscriptionViewModel {
             status = .failed(error.localizedDescription)
             return
         }
+        saveToHistory()
         recap.reset(language: language)
+        let session = recap.session
         await recap.summarizeTranscript(fileSegments)
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     /// Makes the summary of the whole conversation again: from the recaps after a live session, or from the whole
     /// transcript of a file.
     func summarizeAgain() async {
+        let session = recap.session
         if channels.isEmpty {
             await recap.summarizeTranscript(fileSegments)
         } else {
             await recap.summarizeRecaps()
         }
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     /// Clears the transcript. Does nothing while recording, so running channels are never dropped.
@@ -250,10 +264,72 @@ final class TranscriptionViewModel {
         recapTicker?.cancel()
         recapTicker = nil
         recap.clear()
+        historyID = nil
+        historyStartedAt = nil
+        historyFileName = nil
+        historyWarning = nil
+        lastSavedSnapshot = nil
+    }
+
+    /// Starts a History entry for the session about to be recorded or transcribed. The entry is created at the
+    /// first save that has final text.
+    func beginHistorySession(startedAt: Date, fileName: String?) {
+        historyID = nil
+        historyStartedAt = startedAt
+        historyFileName = fileName
+        historyLanguage = language
+        lastSavedSnapshot = nil
+    }
+
+    /// Saves the session on screen to History: a new entry the first time it has final text, then updates to it.
+    /// Does nothing before `beginHistorySession`, after `clear`, after the entry is deleted, or when nothing changed.
+    func saveToHistory() {
+        guard let history, let startedAt = historyStartedAt else { return }
+        guard let snapshot = SessionSnapshot.make(
+            kind: historyFileName == nil ? .live : .file,
+            language: historyLanguage,
+            startedAt: startedAt,
+            fileName: historyFileName,
+            sourceLabels: channels.map(\.label),
+            segments: segments,
+            recaps: recap.entries,
+            overview: recap.overview
+        ) else { return }
+        guard snapshot != lastSavedSnapshot else { return }
+        let id = historyID ?? UUID()
+        do {
+            try history.upsert(id: id, snapshot: snapshot)
+            historyID = id
+            lastSavedSnapshot = snapshot
+            historyWarning = nil
+        } catch {
+            historyWarning = "Couldn't save this session to History. \(error.localizedDescription)"
+        }
+    }
+
+    /// Called after History entries are deleted. When the session on screen was one of them, it isn't saved
+    /// again (which would bring it back) until the next `beginHistorySession`.
+    func historyDidDelete(_ ids: Set<UUID>) {
+        guard let historyID, ids.contains(historyID) else { return }
+        self.historyID = nil
+        historyStartedAt = nil
+        lastSavedSnapshot = nil
+    }
+
+    /// One ticker step while recording: a recap if one is due, and a History checkpoint.
+    func tickRecaps(now: TimeInterval) {
+        recap.tick(now: now, segments: segments)
+        saveToHistory()
     }
 
     func retryRecap(_ id: UUID) {
         recap.retry(id, segments: segments)
+        let session = recap.session
+        Task {
+            await recap.waitForIdle()
+            guard session == recap.session else { return }
+            saveToHistory()
+        }
     }
 
     func exportFiles(_ kind: ExportKind, baseName: String) -> [ExportFile] {
@@ -269,12 +345,10 @@ final class TranscriptionViewModel {
 
     /// Writes the export files for `kind` into a folder the user picked. Existing files are never overwritten.
     func export(_ kind: ExportKind, toFolder folder: URL, date: Date = Date()) {
-        let accessed = folder.startAccessingSecurityScopedResource()
-        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
         do {
             _ = try TranscriptExporter.write(
                 exportFiles(kind, baseName: TranscriptExporter.defaultBaseName(for: date)),
-                to: folder
+                toPickedFolder: folder
             )
         } catch {
             status = .failed(error.localizedDescription)
@@ -363,7 +437,7 @@ final class TranscriptionViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.recapTickInterval)
                 guard let self, !Task.isCancelled, self.isRecording else { return }
-                self.recap.tick(now: Date().timeIntervalSince(sessionStart), segments: self.segments)
+                self.tickRecaps(now: Date().timeIntervalSince(sessionStart))
             }
         }
     }
@@ -375,7 +449,12 @@ final class TranscriptionViewModel {
         guard session == recap.session else { return }
         recapTicker?.cancel()
         recapTicker = nil
+        // The channels have drained: save the whole transcript before the final recap, which can take a while.
+        saveToHistory()
         await recap.finish(segments: segments)
+        // A Clear or a new session during the final recap belongs to another entry.
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     private func prepareAssets() async throws {

@@ -161,10 +161,11 @@ struct RecapView: View {
     }
 }
 
-private struct RecapEntryRow: View {
+struct RecapEntryRow: View {
     let entry: RecapEntry
     let canRetry: Bool
-    let onRetry: () -> Void
+    let onRetry: (() -> Void)?
+    var query: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -194,7 +195,7 @@ private struct RecapEntryRow: View {
             }
             switch entry.state {
             case .done(let content):
-                RecapContentView(content: content)
+                RecapContentView(content: content, query: query)
             case .failed(let message):
                 Label {
                     Text("Couldn't summarize this part. \(message)")
@@ -202,8 +203,10 @@ private struct RecapEntryRow: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                 }
-                Button("Retry", systemImage: "arrow.clockwise", action: onRetry)
-                    .disabled(!canRetry)
+                if let onRetry {
+                    Button("Retry", systemImage: "arrow.clockwise", action: onRetry)
+                        .disabled(!canRetry)
+                }
             }
         }
         .padding()
@@ -211,12 +214,13 @@ private struct RecapEntryRow: View {
     }
 }
 
-/// A recap's headline in bold, then its key points.
-private struct RecapContentView: View {
+/// A recap's headline in bold, then its key points. Matches of `query` are marked.
+struct RecapContentView: View {
     let content: RecapContent
+    var query: String? = nil
 
     var body: some View {
-        Text(content.headline)
+        Text(marked(content.headline))
             .fontWeight(.semibold)
             .textSelection(.enabled)
         if !content.keyPoints.isEmpty {
@@ -224,7 +228,7 @@ private struct RecapContentView: View {
                 ForEach(Array(content.keyPoints.enumerated()), id: \.offset) { _, point in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("•")
-                        Text(point)
+                        Text(marked(point))
                             .textSelection(.enabled)
                     }
                 }
@@ -232,12 +236,17 @@ private struct RecapContentView: View {
             .foregroundStyle(.secondary)
         }
     }
+
+    private func marked(_ text: String) -> AttributedString {
+        SearchHighlight.marked(text, ranges: query.map { HistorySearch.ranges(of: $0, in: text) } ?? [])
+    }
 }
 
 /// The summary of the whole conversation, pinned above the recaps.
-private struct OverviewSection: View {
+struct OverviewSection: View {
     let state: OverviewState
-    let onSummarizeAgain: () -> Void
+    let onSummarizeAgain: (() -> Void)?
+    var query: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -265,7 +274,7 @@ private struct OverviewSection: View {
                     Text("Summarizing the whole conversation…")
                 }
             case .done(let content):
-                RecapContentView(content: content)
+                RecapContentView(content: content, query: query)
             case .failed(let message):
                 Label {
                     Text("Couldn't summarize the conversation. \(message)")
@@ -274,7 +283,7 @@ private struct OverviewSection: View {
                         .foregroundStyle(.orange)
                 }
             }
-            if state != .generating {
+            if state != .generating, let onSummarizeAgain {
                 Button("Summarize again", systemImage: "arrow.clockwise", action: onSummarizeAgain)
             }
         }

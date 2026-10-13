@@ -74,6 +74,30 @@ enum TranscriptExporter {
         return files
     }
 
+    /// The files for a saved session. "Separate" regroups the segments by speaker in `sourceLabels` order, because
+    /// a live channel's label is its segments' speaker. A single-source session's segments have no speaker, so
+    /// they all belong to its one source.
+    static func files(_ kind: ExportKind, baseName: String, content: SessionContent, sourceLabels: [String]) -> [ExportFile] {
+        let segments = content.segments.map(\.transcriptSegment)
+        let channels = sourceLabels.count == 1
+            ? [(label: sourceLabels[0], segments: segments)]
+            : sourceLabels.map { label in (label: label, segments: segments.filter { $0.speaker == label }) }
+        return files(
+            kind,
+            baseName: baseName,
+            combined: segments,
+            channels: channels,
+            header: summaryHeader(overview: content.overview, recaps: content.recaps.map(\.entry))
+        )
+    }
+
+    /// `write(_:to:)` into a folder the user picked, with access to it for the duration of the write.
+    static func write(_ files: [ExportFile], toPickedFolder folder: URL) throws -> [URL] {
+        let accessed = folder.startAccessingSecurityScopedResource()
+        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
+        return try write(files, to: folder)
+    }
+
     /// `<base>.txt`, or `<base>-<label>.txt` with `/` and `:` in the label replaced so it stays one file name.
     static func fileName(base: String, label: String?) -> String {
         guard let label else { return "\(base).txt" }
