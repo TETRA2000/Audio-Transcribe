@@ -127,4 +127,24 @@ struct SessionSnapshotTests {
             TranscriptSegment(start: 1, end: 2, text: " Yo.", speaker: "Zoom"),
         ]) == "You: Hi.\nZoom: Yo.")
     }
+
+    @Test func nonFiniteTimesBecomeZeroSoTheSessionCanBeSaved() throws {
+        let window = RecapEntry(
+            id: UUID(), windowStart: .nan, windowEnd: .infinity, segmentIDs: [], isFinal: false,
+            state: .done(RecapContent(headline: "H", keyPoints: []))
+        )
+        let snapshot = try #require(make(
+            segments: [
+                TranscriptSegment(start: 0, end: 4, text: "a"),
+                TranscriptSegment(start: .nan, end: .infinity, text: "b"),
+            ],
+            recaps: [window]
+        ))
+        #expect(snapshot.content.segments[1].start == 0)
+        #expect(snapshot.content.segments[1].end == 0)
+        #expect(snapshot.content.recaps[0].windowStart == 0)
+        #expect(snapshot.content.recaps[0].windowEnd == 0)
+        #expect(snapshot.duration == 4)
+        #expect(throws: Never.self) { try JSONEncoder().encode(snapshot.content) }
+    }
 }

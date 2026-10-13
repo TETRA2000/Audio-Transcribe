@@ -37,20 +37,31 @@ struct SessionSnapshot: Equatable {
         let savedRecaps = recaps.compactMap { entry in
             entry.content.map { content in
                 SessionContent.Recap(
-                    windowStart: entry.windowStart, windowEnd: entry.windowEnd, isFinal: entry.isFinal,
+                    windowStart: finite(entry.windowStart), windowEnd: finite(entry.windowEnd), isFinal: entry.isFinal,
                     headline: content.headline, keyPoints: content.keyPoints
                 )
             }
+        }
+        let savedSegments = segments.map { segment in
+            var saved = SessionContent.Segment(segment)
+            saved.start = finite(saved.start)
+            saved.end = finite(saved.end)
+            return saved
         }
         let summary: RecapContent? = if case .done(let content) = overview { content } else { nil }
         return SessionSnapshot(
             kind: kind,
             language: language,
             startedAt: startedAt,
-            duration: segments.map(\.end).max() ?? 0,
+            duration: savedSegments.map(\.end).max() ?? 0,
             sourceLabels: sourceLabels,
             fileName: fileName,
-            content: SessionContent(segments: segments.map(SessionContent.Segment.init), recaps: savedRecaps, overview: summary)
+            content: SessionContent(segments: savedSegments, recaps: savedRecaps, overview: summary)
         )
+    }
+
+    /// JSON can't encode NaN or infinity (`CMTime.seconds` can be NaN), so such times are saved as 0.
+    private static func finite(_ time: TimeInterval) -> TimeInterval {
+        time.isFinite ? time : 0
     }
 }
