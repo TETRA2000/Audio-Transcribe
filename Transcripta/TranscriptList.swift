@@ -19,6 +19,8 @@ struct TranscriptHighlight: Equatable {
     let matches: [HistorySearch.TextMatch]
     /// The index in `matches` of the match to show.
     let current: Int
+    /// Changed to scroll to the current match again, as when stepping with only one match.
+    var request = 0
 }
 
 /// A transcript: finished lines with their times (and speakers, when there are several sources), then the
@@ -84,7 +86,9 @@ struct TranscriptLines: View {
             // the in-progress text hit SwiftUI's "tried to update multiple times per frame" limit.
             .defaultScrollAnchor(followsEnd ? .bottom : .top)
             .defaultScrollAnchor(followsEnd ? .bottom : nil, for: .sizeChanges)
-            .onChange(of: highlight, initial: true) {
+            // A task rather than onChange: on first appearance, scrolling has to wait until the lazy stack is laid out.
+            .task(id: highlight) {
+                await Task.yield()
                 guard let id = marks.currentID else { return }
                 withAnimation { proxy.scrollTo(id, anchor: .center) }
             }

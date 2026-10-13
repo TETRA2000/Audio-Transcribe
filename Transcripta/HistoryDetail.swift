@@ -37,6 +37,8 @@ struct HistoryDetail: View {
     @State private var loadFailed = false
     @State private var matches: [HistorySearch.TextMatch] = []
     @State private var currentMatch = 0
+    /// Counts taps on next/previous, so each one scrolls even when the current match stays the same.
+    @State private var scrollRequest = 0
     #if os(macOS)
     @State private var showsRecap = true
     #else
@@ -123,7 +125,7 @@ struct HistoryDetail: View {
         TranscriptLines(
             segments: loaded.segments,
             primarySpeaker: session.sourceLabels.first,
-            highlight: matches.isEmpty ? nil : TranscriptHighlight(matches: matches, current: min(currentMatch, matches.count - 1)),
+            highlight: matches.isEmpty ? nil : TranscriptHighlight(matches: matches, current: min(currentMatch, matches.count - 1), request: scrollRequest),
             followsEnd: false
         )
         .safeAreaInset(edge: .top) {
@@ -142,19 +144,21 @@ struct HistoryDetail: View {
             Button {
                 guard !matches.isEmpty else { return }
                 currentMatch = (currentMatch - 1 + matches.count) % matches.count
+                scrollRequest += 1
             } label: {
                 Image(systemName: "chevron.up")
             }
             .accessibilityLabel("Previous match")
-            .disabled(matches.count < 2)
+            .disabled(matches.isEmpty)
             Button {
                 guard !matches.isEmpty else { return }
                 currentMatch = (currentMatch + 1) % matches.count
+                scrollRequest += 1
             } label: {
                 Image(systemName: "chevron.down")
             }
             .accessibilityLabel("Next match")
-            .disabled(matches.count < 2)
+            .disabled(matches.isEmpty)
         }
         .buttonStyle(.borderless)
         .padding(.horizontal)
