@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -14,7 +15,26 @@ struct ContentView: View {
         }
     }
 
-    @State private var viewModel = TranscriptionViewModel()
+    let history: Result<HistoryStore, any Error>
+    @State private var viewModel: TranscriptionViewModel
+    @State private var pendingDelete: Set<UUID> = []
+    #if os(macOS)
+    @State private var sidebarSelection: Set<HistorySelection> = [.currentSession]
+    @State private var historyQuery = ""
+    #else
+    @State private var showsHistory = false
+    #endif
+
+    init(history: Result<HistoryStore, any Error>) {
+        self.history = history
+        _viewModel = State(initialValue: TranscriptionViewModel(history: try? history.get()))
+    }
+
+    private var historyStore: HistoryStore? { try? history.get() }
+
+    private var historyError: String? {
+        if case .failure(let error) = history { error.localizedDescription } else { nil }
+    }
     @State private var isImporting = false
     @State private var importPurpose = ImportPurpose.audioFile
     @State private var isExportingFile = false
@@ -30,20 +50,15 @@ struct ContentView: View {
 
     var body: some View {
         layout
-        .inspector(isPresented: $showsRecap) {
-            RecapView(
-                scheduler: viewModel.recap,
-                isRecording: viewModel.isRecording,
-                isFileMode: viewModel.mode == .file,
-                onRetry: { id in viewModel.retryRecap(id) },
-                onSummarizeAgain: { Task { await viewModel.summarizeAgain() } }
-            )
-            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
-            .presentationDragIndicator(.visible)
-        }
         #if os(macOS)
-        .frame(minWidth: 520, minHeight: 440)
+        .frame(minWidth: 760, minHeight: 440)
         #endif
+        .historyDeleteConfirmation(pending: $pendingDelete, store: historyStore) { ids in
+            #if os(macOS)
+            sidebarSelection.subtract(ids.map(HistorySelection.session))
+            if sidebarSelection.isEmpty { sidebarSelection = [.currentSession] }
+            #endif
+        }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: importPurpose.contentTypes) { result in
             guard case .success(let url) = result else { return }
             switch importPurpose {
@@ -65,20 +80,95 @@ struct ContentView: View {
         }
     }
 
+    /// The live session's Recap panel.
+    private func withLiveRecap(_ content: some View) -> some View {
+        content.inspector(isPresented: $showsRecap) {
+            RecapView(
+                scheduler: viewModel.recap,
+                isRecording: viewModel.isRecording,
+                isFileMode: viewModel.mode == .file,
+                onRetry: { id in viewModel.retryRecap(id) },
+                onSummarizeAgain: { Task { await viewModel.summarizeAgain() } }
+            )
+            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
+            .presentationDragIndicator(.visible)
+        }
+    }
+
     #if os(macOS)
+    /// macOS: the sidebar lists the current session, then History. The detail shows whichever is selected.
     private var layout: some View {
-        VStack(spacing: 0) {
-            controls
-            Divider()
-            statusBar
-            Divider()
-            transcriptView
+        NavigationSplitView {
+            List(selection: $sidebarSelection) {
+                Label {
+                    Text("Current Session")
+                } icon: {
+                    Image(systemName: viewModel.isRecording ? "record.circle.fill" : "waveform")
+                        .foregroundStyle(viewModel.isRecording ? Color.red : Color.accentColor)
+                }
+                .tag(HistorySelection.currentSession)
+                if historyStore != nil {
+                    HistorySections(query: historyQuery, onDelete: { pendingDelete = $0 })
+                } else {
+                    Section("History") {
+                        Text("History couldn't be opened. \(historyError ?? "")")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .searchable(text: $historyQuery, placement: .sidebar, prompt: "Search History")
+            .onDeleteCommand {
+                if !selectedSessionIDs.isEmpty { pendingDelete = selectedSessionIDs }
+            }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+        } detail: {
+            detail
+        }
+        .historyContainer(historyStore)
+    }
+
+    private var selectedSessionIDs: Set<UUID> {
+        Set(sidebarSelection.compactMap { item -> UUID? in
+            if case .session(let id) = item { return id }
+            return nil
+        })
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        let ids = selectedSessionIDs
+        if ids.count == 1, let id = ids.first, let session = try? historyStore?.session(id: id) {
+            HistoryDetail(session: session, query: historyQuery, onDelete: { pendingDelete = [id] })
+                .id(id)
+        } else if ids.count > 1 {
+            ContentUnavailableView {
+                Label("\(ids.count) Sessions Selected", systemImage: "doc.on.doc")
+            } actions: {
+                Button("Delete \(ids.count) Sessions", role: .destructive) { pendingDelete = ids }
+            }
+        } else {
+            withLiveRecap(
+                VStack(spacing: 0) {
+                    controls
+                    Divider()
+                    statusBar
+                    Divider()
+                    transcriptView
+                }
+            )
         }
     }
     #else
     /// iOS: the settings that frame a session (mode, language) and the recap live in the navigation bar, the
     /// transcript fills the screen, and the one primary action sits at the bottom within thumb reach.
     private var layout: some View {
+        withLiveRecap(iOSStack)
+            .sheet(isPresented: $showsHistory) {
+                HistoryScreen(store: historyStore, storeError: historyError)
+            }
+    }
+
+    private var iOSStack: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 statusBar
@@ -107,6 +197,11 @@ struct ContentView: View {
                     languageMenu
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showsHistory = true
+                    } label: {
+                        Label("History", systemImage: "clock.arrow.circlepath")
+                    }
                     Button {
                         showsRecap.toggle()
                     } label: {
@@ -300,6 +395,16 @@ struct ContentView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 6)
             }
+            if let warning = viewModel.historyWarning {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.caption)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+            }
         }
     }
 
@@ -421,6 +526,18 @@ struct ContentView: View {
     }
 }
 
+private extension View {
+    /// Puts History's container in the environment, when History could be opened.
+    @ViewBuilder
+    func historyContainer(_ store: HistoryStore?) -> some View {
+        if let store {
+            modelContainer(store.container)
+        } else {
+            self
+        }
+    }
+}
+
 #Preview {
-    ContentView()
+    ContentView(history: Result { try HistoryStore(inMemory: true) })
 }
