@@ -134,11 +134,15 @@ private struct HistoryDeleteConfirmation: ViewModifier {
     let store: HistoryStore?
     let onDeleted: (Set<UUID>) -> Void
     @State private var errorMessage: String?
+    /// `pending` is emptied as the dialog starts to close, so the title keeps the last count it showed.
+    @State private var lastCount = 0
 
     func body(content: Content) -> some View {
+        let count = pending.isEmpty ? lastCount : pending.count
         content
+            .onChange(of: pending) { if !pending.isEmpty { lastCount = pending.count } }
             .confirmationDialog(
-                pending.count == 1 ? "Delete this session?" : "Delete \(pending.count) sessions?",
+                count == 1 ? "Delete this session?" : "Delete \(count) sessions?",
                 isPresented: Binding(get: { !pending.isEmpty }, set: { if !$0 { pending = [] } }),
                 titleVisibility: .visible,
                 presenting: pending
