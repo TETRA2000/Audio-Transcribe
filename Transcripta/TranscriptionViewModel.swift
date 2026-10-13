@@ -117,16 +117,8 @@ final class TranscriptionViewModel {
     /// Whether the transcript came from several sources, so it can be exported as separate files.
     var hasSeparateSources: Bool { channels.count > 1 }
 
-    /// The transcript as plain text for Copy and Share. A single-source transcript is concatenated as-is: the
-    /// transcriber already includes leading spaces where the language needs them (English) and none where it doesn't
-    /// (Japanese). A multi-source transcript puts each segment on its own `Speaker: text` line.
-    var fullText: String {
-        let segments = self.segments
-        if segments.contains(where: { $0.speaker != nil }) {
-            return TranscriptSegment.lines(segments).joined(separator: "\n")
-        }
-        return segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    /// The transcript as plain text for Copy and Share.
+    var fullText: String { TranscriptSegment.plainText(segments) }
 
     var isRecording: Bool {
         if case .recording = status { return true }

@@ -14,6 +14,28 @@ nonisolated enum HistorySearch {
         String(text.flatMap(foldCharacter))
     }
 
+    /// Everything a session is searched by, in the order snippets prefer: the file name, the speakers, the
+    /// summary, the recaps, then the transcript one line per segment.
+    static func searchableTexts(fileName: String?, content: SessionContent) -> [String] {
+        var texts: [String] = []
+        if let fileName { texts.append(fileName) }
+        var speakers: [String] = []
+        for speaker in content.segments.compactMap(\.speaker) where !speakers.contains(speaker) {
+            speakers.append(speaker)
+        }
+        texts += speakers
+        if let overview = content.overview { texts.append(overview.plainText) }
+        texts += content.recaps.map(\.content.plainText)
+        texts += content.segments.map { $0.text.trimmingCharacters(in: .whitespaces) }
+        return texts
+    }
+
+    /// The folded text the History list searches. Texts are joined with newlines, so a query never matches across
+    /// two of them.
+    static func searchKey(fileName: String?, content: SessionContent) -> String {
+        fold(searchableTexts(fileName: fileName, content: content).joined(separator: "\n"))
+    }
+
     private static func foldCharacter(_ character: Character) -> [Character] {
         Array(String(character).precomposedStringWithCompatibilityMapping
             .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil))

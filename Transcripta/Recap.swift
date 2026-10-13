@@ -2,7 +2,7 @@ import Foundation
 import FoundationModels
 
 /// One recap's text: what `SystemRecapGenerator.parse` reads from the model's reply.
-nonisolated struct RecapContent: Equatable, Sendable {
+nonisolated struct RecapContent: Equatable, Sendable, Codable {
     var headline: String
     var keyPoints: [String]
 
