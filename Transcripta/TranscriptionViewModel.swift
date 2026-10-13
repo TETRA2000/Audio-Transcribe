@@ -261,12 +261,10 @@ final class TranscriptionViewModel {
 
     /// Writes the export files for `kind` into a folder the user picked. Existing files are never overwritten.
     func export(_ kind: ExportKind, toFolder folder: URL, date: Date = Date()) {
-        let accessed = folder.startAccessingSecurityScopedResource()
-        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
         do {
             _ = try TranscriptExporter.write(
                 exportFiles(kind, baseName: TranscriptExporter.defaultBaseName(for: date)),
-                to: folder
+                toPickedFolder: folder
             )
         } catch {
             status = .failed(error.localizedDescription)
