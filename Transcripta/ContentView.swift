@@ -21,6 +21,8 @@ struct ContentView: View {
     #if os(macOS)
     @State private var sidebarSelection: Set<HistorySelection> = [.currentSession]
     @State private var historyQuery = ""
+    /// `historyQuery` once typing pauses: what the sidebar and the detail search.
+    @State private var historySearch = ""
     #else
     @State private var showsHistory = false
     #endif
@@ -109,7 +111,7 @@ struct ContentView: View {
                 }
                 .tag(HistorySelection.currentSession)
                 if historyStore != nil {
-                    HistorySections(query: historyQuery, onDelete: { pendingDelete = $0 })
+                    HistorySections(query: historySearch, onDelete: { pendingDelete = $0 })
                 } else {
                     Section("History") {
                         Text("History couldn't be opened. \(historyError ?? "")")
@@ -118,6 +120,7 @@ struct ContentView: View {
                 }
             }
             .searchable(text: $historyQuery, placement: .sidebar, prompt: "Search History")
+            .historySearchDebounce(historyQuery, into: $historySearch)
             .onDeleteCommand {
                 if !selectedSessionIDs.isEmpty { pendingDelete = selectedSessionIDs }
             }
@@ -139,7 +142,7 @@ struct ContentView: View {
     private var detail: some View {
         let ids = selectedSessionIDs
         if ids.count == 1, let id = ids.first, let session = try? historyStore?.session(id: id) {
-            HistoryDetail(session: session, query: historyQuery, onDelete: { pendingDelete = [id] })
+            HistoryDetail(session: session, query: historySearch, onDelete: { pendingDelete = [id] })
                 .id(id)
         } else if ids.count > 1 {
             ContentUnavailableView {

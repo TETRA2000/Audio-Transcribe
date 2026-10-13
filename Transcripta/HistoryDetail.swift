@@ -2,6 +2,8 @@ import SwiftUI
 
 /// A saved session's content, decoded once, with the transcript in the form the transcript view shows.
 struct LoadedSession {
+    /// New for every load, so matching reruns when the session is reloaded.
+    let id = UUID()
     let content: SessionContent
     /// Converted once, so line IDs stay stable while the session is open.
     let segments: [TranscriptSegment]
@@ -15,7 +17,9 @@ struct LoadedSession {
         plainText = TranscriptSegment.plainText(segments)
     }
 
-    func transcriptMatches(_ query: String) -> [HistorySearch.TextMatch] {
+    /// Off the main actor: folding an hour-long transcript takes tens of milliseconds.
+    @concurrent
+    nonisolated static func transcriptMatches(in segments: [TranscriptSegment], query: String) async -> [HistorySearch.TextMatch] {
         HistorySearch.matches(in: segments.map(TranscriptLines.displayText), query: query)
     }
 }
@@ -71,7 +75,9 @@ struct HistoryDetail: View {
             .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
             .presentationDragIndicator(.visible)
         }
-        .task(id: "\(session.id)|\(query)") { load() }
+        // Decoding and matching are keyed separately, so a new query doesn't decode again or give lines new IDs.
+        .task(id: session.id) { load() }
+        .task(id: "\(loaded?.id.uuidString ?? "")|\(activeQuery ?? "")") { await findMatches() }
         .transcriptExporter(
             request: $exportRequest,
             makeFiles: { kind, baseName in
@@ -88,18 +94,28 @@ struct HistoryDetail: View {
     }
 
     private func load() {
+        // The old matches' ranges may not fit the new content; they are found again for it.
+        matches = []
+        currentMatch = 0
         do {
-            let loaded = LoadedSession(try session.content())
-            self.loaded = loaded
+            loaded = LoadedSession(try session.content())
             loadFailed = false
-            matches = activeQuery.map(loaded.transcriptMatches) ?? []
-            currentMatch = 0
         } catch {
             loaded = nil
             loadFailed = true
+        }
+    }
+
+    private func findMatches() async {
+        guard let loaded, let activeQuery else {
             matches = []
             currentMatch = 0
+            return
         }
+        let found = await LoadedSession.transcriptMatches(in: loaded.segments, query: activeQuery)
+        guard !Task.isCancelled else { return }
+        matches = found
+        currentMatch = 0
     }
 
     private func transcript(_ loaded: LoadedSession) -> some View {

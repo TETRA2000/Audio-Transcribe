@@ -89,14 +89,26 @@ struct HistoryRow: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
-        .task(id: "\(session.id)|\(query)") { snippet = makeSnippet() }
+        .task(id: "\(session.id)|\(query)") {
+            guard !query.isEmpty else {
+                snippet = nil
+                return
+            }
+            let found = await Self.snippet(contentData: session.contentData, fileName: session.fileName, query: query)
+            guard !Task.isCancelled else { return }
+            snippet = found.map(Self.attributed)
+        }
     }
 
-    /// Built once per session and query, and only for rows on screen: it decodes the session's content.
-    private func makeSnippet() -> AttributedString? {
-        guard !query.isEmpty, let content = try? session.content(),
-              let snippet = HistorySearch.snippet(in: HistorySearch.searchableTexts(fileName: session.fileName, content: content), query: query)
-        else { return nil }
+    /// Built once per session and query, and only for rows on screen. Off the main actor: it decodes the session's
+    /// content and folds all its text.
+    @concurrent
+    private nonisolated static func snippet(contentData: Data, fileName: String?, query: String) async -> HistorySearch.Snippet? {
+        guard let content = try? JSONDecoder().decode(SessionContent.self, from: contentData) else { return nil }
+        return HistorySearch.snippet(in: HistorySearch.searchableTexts(fileName: fileName, content: content), query: query)
+    }
+
+    private static func attributed(_ snippet: HistorySearch.Snippet) -> AttributedString {
         var attributed = AttributedString(snippet.text)
         if let match = Range(snippet.match, in: attributed) {
             attributed[match].inlinePresentationIntent = .stronglyEmphasized
@@ -119,6 +131,17 @@ struct HistoryUnavailableView: View {
 }
 
 extension View {
+    /// Copies `text` into `debounced` once typing pauses, so History isn't filtered and searched on every keystroke.
+    /// Clearing the text takes effect at once.
+    func historySearchDebounce(_ text: String, into debounced: Binding<String>) -> some View {
+        task(id: text) {
+            if !text.isEmpty {
+                guard (try? await Task.sleep(for: .milliseconds(250))) != nil else { return }
+            }
+            debounced.wrappedValue = text
+        }
+    }
+
     /// Asks before deleting the `pending` sessions, then deletes them and reports the IDs. A failure shows an alert.
     func historyDeleteConfirmation(
         pending: Binding<Set<UUID>>,
@@ -176,6 +199,8 @@ struct HistoryScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    /// `query` once typing pauses: what the list and the detail search.
+    @State private var searchQuery = ""
     @State private var selection: Set<HistorySelection> = []
     @State private var path: [HistorySelection] = []
     @State private var pendingDelete: Set<UUID> = []
@@ -211,7 +236,7 @@ struct HistoryScreen: View {
                 .environment(\.editMode, $editMode)
                 .navigationDestination(for: HistorySelection.self) { item in
                     if case .session(let id) = item, let session = try? store?.session(id: id) {
-                        HistoryDetail(session: session, query: query, onDelete: { pendingDelete = [id] })
+                        HistoryDetail(session: session, query: searchQuery, onDelete: { pendingDelete = [id] })
                     }
                 }
         }
@@ -229,9 +254,10 @@ struct HistoryScreen: View {
     private var content: some View {
         if let store {
             List(selection: $selection) {
-                HistorySections(query: query, onDelete: { pendingDelete = $0 })
+                HistorySections(query: searchQuery, onDelete: { pendingDelete = $0 })
             }
             .searchable(text: $query, prompt: "Search transcripts and summaries")
+            .historySearchDebounce(query, into: $searchQuery)
             .modelContainer(store.container)
         } else {
             HistoryUnavailableView(message: storeError)

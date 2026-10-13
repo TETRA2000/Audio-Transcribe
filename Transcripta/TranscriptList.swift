@@ -33,7 +33,7 @@ struct TranscriptLines: View {
     var followsEnd = true
 
     /// The text a line shows, which is also what search matches are found in.
-    static func displayText(_ segment: TranscriptSegment) -> String {
+    nonisolated static func displayText(_ segment: TranscriptSegment) -> String {
         segment.text.trimmingCharacters(in: .whitespaces)
     }
 
