@@ -61,10 +61,21 @@ final class TranscriptionViewModel {
     static let recapTickInterval: Duration = .seconds(30)
     @ObservationIgnored private var recapTicker: Task<Void, Never>?
 
+    /// Where sessions are saved. `nil` when History couldn't be opened, and in tests that don't need it.
+    let history: (any HistorySaving)?
+    /// The History entry for the session on screen, once it has been saved.
+    private(set) var historyID: UUID?
+    /// Shown when the session couldn't be saved to History. Transcription carries on.
+    var historyWarning: String?
+    @ObservationIgnored private var historyStartedAt: Date?
+    @ObservationIgnored private var historyFileName: String?
+    @ObservationIgnored private var historyLanguage: TranscriptionLanguage = .english
+
     /// `recapGenerator` defaults to the on-device model. It is built here rather than as a default argument, which
     /// would be evaluated outside the main actor.
-    init(recapGenerator: (any RecapGenerating)? = nil) {
+    init(recapGenerator: (any RecapGenerating)? = nil, history: (any HistorySaving)? = nil) {
         recap = RecapScheduler(generator: recapGenerator ?? SystemRecapGenerator())
+        self.history = history
     }
 
     var supportsSystemAudio: Bool {
@@ -159,6 +170,7 @@ final class TranscriptionViewModel {
             try await prepareAssets()
             channels = newChannels
             let sessionStart = Date()
+            beginHistorySession(startedAt: sessionStart, fileName: nil)
             try await LiveChannel.startAll(
                 newChannels,
                 language: language,
@@ -203,6 +215,7 @@ final class TranscriptionViewModel {
 
     func transcribe(fileURL: URL) async {
         clear()
+        beginHistorySession(startedAt: Date(), fileName: fileURL.lastPathComponent)
 
         let accessed = fileURL.startAccessingSecurityScopedResource()
         defer { if accessed { fileURL.stopAccessingSecurityScopedResource() } }
@@ -218,18 +231,25 @@ final class TranscriptionViewModel {
             status = .failed(error.localizedDescription)
             return
         }
+        saveToHistory()
         recap.reset(language: language)
+        let session = recap.session
         await recap.summarizeTranscript(fileSegments)
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     /// Makes the summary of the whole conversation again: from the recaps after a live session, or from the whole
     /// transcript of a file.
     func summarizeAgain() async {
+        let session = recap.session
         if channels.isEmpty {
             await recap.summarizeTranscript(fileSegments)
         } else {
             await recap.summarizeRecaps()
         }
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     /// Clears the transcript. Does nothing while recording, so running channels are never dropped.
@@ -242,10 +262,59 @@ final class TranscriptionViewModel {
         recapTicker?.cancel()
         recapTicker = nil
         recap.clear()
+        historyID = nil
+        historyStartedAt = nil
+        historyFileName = nil
+        historyWarning = nil
+    }
+
+    /// Starts a History entry for the session about to be recorded or transcribed. The entry is created at the
+    /// first save that has final text.
+    func beginHistorySession(startedAt: Date, fileName: String?) {
+        historyID = nil
+        historyStartedAt = startedAt
+        historyFileName = fileName
+        historyLanguage = language
+    }
+
+    /// Saves the session on screen to History: a new entry the first time it has final text, then updates to it.
+    /// Does nothing before `beginHistorySession` or after `clear`.
+    func saveToHistory() {
+        guard let history, let startedAt = historyStartedAt else { return }
+        guard let snapshot = SessionSnapshot.make(
+            kind: historyFileName == nil ? .live : .file,
+            language: historyLanguage,
+            startedAt: startedAt,
+            fileName: historyFileName,
+            sourceLabels: channels.map(\.label),
+            segments: segments,
+            recaps: recap.entries,
+            overview: recap.overview
+        ) else { return }
+        let id = historyID ?? UUID()
+        do {
+            try history.upsert(id: id, snapshot: snapshot)
+            historyID = id
+            historyWarning = nil
+        } catch {
+            historyWarning = "Couldn't save this session to History. \(error.localizedDescription)"
+        }
+    }
+
+    /// One ticker step while recording: a recap if one is due, and a History checkpoint.
+    func tickRecaps(now: TimeInterval) {
+        recap.tick(now: now, segments: segments)
+        saveToHistory()
     }
 
     func retryRecap(_ id: UUID) {
         recap.retry(id, segments: segments)
+        let session = recap.session
+        Task {
+            await recap.waitForIdle()
+            guard session == recap.session else { return }
+            saveToHistory()
+        }
     }
 
     func exportFiles(_ kind: ExportKind, baseName: String) -> [ExportFile] {
@@ -353,7 +422,7 @@ final class TranscriptionViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.recapTickInterval)
                 guard let self, !Task.isCancelled, self.isRecording else { return }
-                self.recap.tick(now: Date().timeIntervalSince(sessionStart), segments: self.segments)
+                self.tickRecaps(now: Date().timeIntervalSince(sessionStart))
             }
         }
     }
@@ -365,7 +434,12 @@ final class TranscriptionViewModel {
         guard session == recap.session else { return }
         recapTicker?.cancel()
         recapTicker = nil
+        // The channels have drained: save the whole transcript before the final recap, which can take a while.
+        saveToHistory()
         await recap.finish(segments: segments)
+        // A Clear or a new session during the final recap belongs to another entry.
+        guard session == recap.session else { return }
+        saveToHistory()
     }
 
     private func prepareAssets() async throws {
