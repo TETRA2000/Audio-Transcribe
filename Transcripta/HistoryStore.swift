@@ -13,9 +13,9 @@ final class HistoryStore: HistorySaving {
     private var context: ModelContext { container.mainContext }
 
     init(inMemory: Bool = false) throws {
-        // An in-memory store gets a unique name, so each one is separate.
+        // The on-disk store is named "History". An in-memory store gets a unique name, so each one is separate.
         let configuration = ModelConfiguration(
-            inMemory ? UUID().uuidString : nil,
+            inMemory ? UUID().uuidString : "History",
             isStoredInMemoryOnly: inMemory,
             cloudKitDatabase: .none
         )
