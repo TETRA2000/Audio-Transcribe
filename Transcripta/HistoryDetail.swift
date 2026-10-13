@@ -68,14 +68,10 @@ struct HistoryDetail: View {
         }
         .navigationTitle(HistoryFormat.title(session.startedAt))
         .toolbar { toolbar }
-        .inspector(isPresented: $showsRecap) {
-            Group {
-                if let loaded {
-                    SavedRecapView(content: loaded.content, query: activeQuery)
-                }
+        .recapPanel(isPresented: $showsRecap) {
+            if let loaded {
+                SavedRecapView(content: loaded.content, query: activeQuery)
             }
-            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
-            .presentationDragIndicator(.visible)
         }
         // Decoding and matching are keyed separately, so a new query doesn't decode again or give lines new IDs.
         // Decoding runs again when the session is saved again (its summary can arrive after it is opened).

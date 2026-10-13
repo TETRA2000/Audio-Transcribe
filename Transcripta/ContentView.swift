@@ -85,7 +85,7 @@ struct ContentView: View {
 
     /// The live session's Recap panel.
     private func withLiveRecap(_ content: some View) -> some View {
-        content.inspector(isPresented: $showsRecap) {
+        content.recapPanel(isPresented: $showsRecap) {
             RecapView(
                 scheduler: viewModel.recap,
                 isRecording: viewModel.isRecording,
@@ -93,8 +93,6 @@ struct ContentView: View {
                 onRetry: { id in viewModel.retryRecap(id) },
                 onSummarizeAgain: { Task { await viewModel.summarizeAgain() } }
             )
-            .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
-            .presentationDragIndicator(.visible)
         }
     }
 
