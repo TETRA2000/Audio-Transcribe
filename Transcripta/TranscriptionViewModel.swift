@@ -70,6 +70,8 @@ final class TranscriptionViewModel {
     @ObservationIgnored private var historyStartedAt: Date?
     @ObservationIgnored private var historyFileName: String?
     @ObservationIgnored private var historyLanguage: TranscriptionLanguage = .english
+    /// What was last saved as `historyID`, so an unchanged checkpoint isn't written again.
+    @ObservationIgnored private var lastSavedSnapshot: SessionSnapshot?
 
     /// `recapGenerator` defaults to the on-device model. It is built here rather than as a default argument, which
     /// would be evaluated outside the main actor.
@@ -266,6 +268,7 @@ final class TranscriptionViewModel {
         historyStartedAt = nil
         historyFileName = nil
         historyWarning = nil
+        lastSavedSnapshot = nil
     }
 
     /// Starts a History entry for the session about to be recorded or transcribed. The entry is created at the
@@ -275,10 +278,11 @@ final class TranscriptionViewModel {
         historyStartedAt = startedAt
         historyFileName = fileName
         historyLanguage = language
+        lastSavedSnapshot = nil
     }
 
     /// Saves the session on screen to History: a new entry the first time it has final text, then updates to it.
-    /// Does nothing before `beginHistorySession`, after `clear`, or after the entry is deleted.
+    /// Does nothing before `beginHistorySession`, after `clear`, after the entry is deleted, or when nothing changed.
     func saveToHistory() {
         guard let history, let startedAt = historyStartedAt else { return }
         guard let snapshot = SessionSnapshot.make(
@@ -291,10 +295,12 @@ final class TranscriptionViewModel {
             recaps: recap.entries,
             overview: recap.overview
         ) else { return }
+        guard snapshot != lastSavedSnapshot else { return }
         let id = historyID ?? UUID()
         do {
             try history.upsert(id: id, snapshot: snapshot)
             historyID = id
+            lastSavedSnapshot = snapshot
             historyWarning = nil
         } catch {
             historyWarning = "Couldn't save this session to History. \(error.localizedDescription)"
@@ -307,6 +313,7 @@ final class TranscriptionViewModel {
         guard let historyID, ids.contains(historyID) else { return }
         self.historyID = nil
         historyStartedAt = nil
+        lastSavedSnapshot = nil
     }
 
     /// One ticker step while recording: a recap if one is due, and a History checkpoint.

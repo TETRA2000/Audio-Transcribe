@@ -10,6 +10,11 @@ private final class FailingHistory: HistorySaving {
     func upsert(id: UUID, snapshot: SessionSnapshot) throws { throw SaveFailed() }
 }
 
+private final class CountingHistory: HistorySaving {
+    var upserts = 0
+    func upsert(id: UUID, snapshot: SessionSnapshot) throws { upserts += 1 }
+}
+
 @Suite(.timeLimit(.minutes(1)))
 struct TranscriptionViewModelHistoryTests {
     private let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
@@ -193,5 +198,33 @@ struct TranscriptionViewModelHistoryTests {
 
         #expect(viewModel.historyID == id)
         #expect(try store.session(id: id)?.content().segments.count == 2)
+    }
+
+    @Test func unchangedCheckpointIsNotSavedAgain() {
+        let history = CountingHistory()
+        let viewModel = TranscriptionViewModel(recapGenerator: FakeRecapGenerator(), history: history)
+        viewModel.channels = [makeIdleChannel(.microphone, label: "You", segments: [speech(3, at: 0)])]
+        viewModel.recap.reset(language: .english)
+        viewModel.beginHistorySession(startedAt: startedAt, fileName: nil)
+        viewModel.status = .recording
+
+        viewModel.tickRecaps(now: 30)
+        viewModel.tickRecaps(now: 60)
+        #expect(history.upserts == 1)
+
+        viewModel.channels[0].segments.append(speech(3, at: 10))
+        viewModel.tickRecaps(now: 90)
+        #expect(history.upserts == 2)
+    }
+
+    @Test func aNewSessionSavesEvenIfItLooksTheSame() {
+        let history = CountingHistory()
+        let viewModel = TranscriptionViewModel(recapGenerator: FakeRecapGenerator(), history: history)
+        viewModel.beginHistorySession(startedAt: startedAt, fileName: "a.m4a")
+        viewModel.fileSegments = [speech(3, at: 0)]
+        viewModel.saveToHistory()
+        viewModel.beginHistorySession(startedAt: startedAt, fileName: "a.m4a")
+        viewModel.saveToHistory()
+        #expect(history.upserts == 2)
     }
 }
