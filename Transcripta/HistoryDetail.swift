@@ -5,13 +5,15 @@ struct LoadedSession {
     let content: SessionContent
     /// Converted once, so line IDs stay stable while the session is open.
     let segments: [TranscriptSegment]
+    /// Computed once: the share and copy actions read it on every body evaluation.
+    let plainText: String
 
     init(_ content: SessionContent) {
         self.content = content
-        segments = content.segments.map(\.transcriptSegment)
+        let segments = content.segments.map(\.transcriptSegment)
+        self.segments = segments
+        plainText = TranscriptSegment.plainText(segments)
     }
-
-    var plainText: String { TranscriptSegment.plainText(segments) }
 
     func transcriptMatches(_ query: String) -> [HistorySearch.TextMatch] {
         HistorySearch.matches(in: segments.map(TranscriptLines.displayText), query: query)
@@ -95,6 +97,8 @@ struct HistoryDetail: View {
         } catch {
             loaded = nil
             loadFailed = true
+            matches = []
+            currentMatch = 0
         }
     }
 
@@ -119,6 +123,7 @@ struct HistoryDetail: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
+                guard !matches.isEmpty else { return }
                 currentMatch = (currentMatch - 1 + matches.count) % matches.count
             } label: {
                 Image(systemName: "chevron.up")
@@ -126,6 +131,7 @@ struct HistoryDetail: View {
             .accessibilityLabel("Previous match")
             .disabled(matches.count < 2)
             Button {
+                guard !matches.isEmpty else { return }
                 currentMatch = (currentMatch + 1) % matches.count
             } label: {
                 Image(systemName: "chevron.down")

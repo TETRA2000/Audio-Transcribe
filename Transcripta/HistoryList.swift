@@ -69,6 +69,7 @@ struct HistorySections: View {
 struct HistoryRow: View {
     let session: HistorySession
     let query: String
+    @State private var snippet: AttributedString?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -88,10 +89,11 @@ struct HistoryRow: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+        .task(id: "\(session.id)|\(query)") { snippet = makeSnippet() }
     }
 
-    /// Built only while searching, and only for rows on screen: it decodes the session's content.
-    private var snippet: AttributedString? {
+    /// Built once per session and query, and only for rows on screen: it decodes the session's content.
+    private func makeSnippet() -> AttributedString? {
         guard !query.isEmpty, let content = try? session.content(),
               let snippet = HistorySearch.snippet(in: HistorySearch.searchableTexts(fileName: session.fileName, content: content), query: query)
         else { return nil }
