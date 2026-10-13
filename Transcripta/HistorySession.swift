@@ -21,6 +21,8 @@ final class HistorySession {
     @Attribute(.externalStorage) var contentData = Data()
     /// `HistorySearch.searchKey`: folded text the list's predicate searches.
     var searchKey = ""
+    /// When the session was last saved, so an open session reloads when it is saved again.
+    var savedAt = Date.distantPast
 
     init(id: UUID) {
         self.id = id

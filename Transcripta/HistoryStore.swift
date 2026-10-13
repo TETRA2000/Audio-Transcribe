@@ -41,6 +41,7 @@ final class HistoryStore: HistorySaving {
         session.headline = snapshot.headline
         session.contentData = contentData
         session.searchKey = snapshot.searchKey
+        session.savedAt = Date()
         do {
             try context.save()
         } catch {

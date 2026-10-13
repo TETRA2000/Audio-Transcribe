@@ -21,6 +21,15 @@ struct HistoryStoreTests {
         )!
     }
 
+    @Test func upsertStampsEachSave() throws {
+        let store = try HistoryStore(inMemory: true)
+        let id = UUID()
+        try store.upsert(id: id, snapshot: snapshot("first"))
+        let first = try #require(try store.session(id: id)?.savedAt)
+        try store.upsert(id: id, snapshot: snapshot("second"))
+        #expect(try #require(try store.session(id: id)?.savedAt) > first)
+    }
+
     @Test func upsertInsertsOnceThenUpdates() throws {
         let store = try HistoryStore(inMemory: true)
         let id = UUID()

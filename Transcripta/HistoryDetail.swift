@@ -76,7 +76,8 @@ struct HistoryDetail: View {
             .presentationDragIndicator(.visible)
         }
         // Decoding and matching are keyed separately, so a new query doesn't decode again or give lines new IDs.
-        .task(id: session.id) { load() }
+        // Decoding runs again when the session is saved again (its summary can arrive after it is opened).
+        .task(id: "\(session.id)|\(session.savedAt.timeIntervalSinceReferenceDate)") { load() }
         .task(id: "\(loaded?.id.uuidString ?? "")|\(activeQuery ?? "")") { await findMatches() }
         .transcriptExporter(
             request: $exportRequest,
