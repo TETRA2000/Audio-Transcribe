@@ -54,6 +54,7 @@ struct ContentView: View {
         .frame(minWidth: 760, minHeight: 440)
         #endif
         .historyDeleteConfirmation(pending: $pendingDelete, store: historyStore) { ids in
+            viewModel.historyDidDelete(ids)
             #if os(macOS)
             sidebarSelection.subtract(ids.map(HistorySelection.session))
             if sidebarSelection.isEmpty { sidebarSelection = [.currentSession] }
@@ -164,7 +165,9 @@ struct ContentView: View {
     private var layout: some View {
         withLiveRecap(iOSStack)
             .sheet(isPresented: $showsHistory) {
-                HistoryScreen(store: historyStore, storeError: historyError)
+                HistoryScreen(store: historyStore, storeError: historyError) { ids in
+                    viewModel.historyDidDelete(ids)
+                }
             }
     }
 

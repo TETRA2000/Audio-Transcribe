@@ -161,4 +161,37 @@ struct TranscriptionViewModelHistoryTests {
         #expect(try store.session(id: nextID)?.content().recaps.isEmpty == true)
         #expect(try store.session(id: nextID)?.fileName == "next.m4a")
     }
+
+    @Test func deletedSessionIsNotSavedAgain() throws {
+        let store = try HistoryStore(inMemory: true)
+        let viewModel = makeRecording(store, words: 3)
+        viewModel.tickRecaps(now: 30)
+        let id = try #require(viewModel.historyID)
+
+        try store.delete([id])
+        viewModel.historyDidDelete([id])
+        viewModel.channels[0].segments.append(speech(3, at: 10))
+        viewModel.tickRecaps(now: 60)
+
+        #expect(try store.fetch(matching: "").isEmpty)
+        #expect(viewModel.historyID == nil)
+
+        viewModel.beginHistorySession(startedAt: startedAt, fileName: nil)
+        viewModel.tickRecaps(now: 90)
+        #expect(try store.fetch(matching: "").count == 1)
+    }
+
+    @Test func deletingAnotherSessionKeepsSaving() throws {
+        let store = try HistoryStore(inMemory: true)
+        let viewModel = makeRecording(store, words: 3)
+        viewModel.tickRecaps(now: 30)
+        let id = try #require(viewModel.historyID)
+
+        viewModel.historyDidDelete([UUID()])
+        viewModel.channels[0].segments.append(speech(3, at: 10))
+        viewModel.tickRecaps(now: 60)
+
+        #expect(viewModel.historyID == id)
+        #expect(try store.session(id: id)?.content().segments.count == 2)
+    }
 }

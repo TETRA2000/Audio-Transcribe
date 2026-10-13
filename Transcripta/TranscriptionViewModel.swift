@@ -278,7 +278,7 @@ final class TranscriptionViewModel {
     }
 
     /// Saves the session on screen to History: a new entry the first time it has final text, then updates to it.
-    /// Does nothing before `beginHistorySession` or after `clear`.
+    /// Does nothing before `beginHistorySession`, after `clear`, or after the entry is deleted.
     func saveToHistory() {
         guard let history, let startedAt = historyStartedAt else { return }
         guard let snapshot = SessionSnapshot.make(
@@ -299,6 +299,14 @@ final class TranscriptionViewModel {
         } catch {
             historyWarning = "Couldn't save this session to History. \(error.localizedDescription)"
         }
+    }
+
+    /// Called after History entries are deleted. When the session on screen was one of them, it isn't saved
+    /// again (which would bring it back) until the next `beginHistorySession`.
+    func historyDidDelete(_ ids: Set<UUID>) {
+        guard let historyID, ids.contains(historyID) else { return }
+        self.historyID = nil
+        historyStartedAt = nil
     }
 
     /// One ticker step while recording: a recap if one is due, and a History checkpoint.

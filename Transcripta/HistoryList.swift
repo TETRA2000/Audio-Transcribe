@@ -167,6 +167,8 @@ private struct HistoryDeleteConfirmation: ViewModifier {
 struct HistoryScreen: View {
     let store: HistoryStore?
     let storeError: String?
+    /// Reports deleted sessions, so the session on screen isn't saved back.
+    let onDeleted: (Set<UUID>) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -210,6 +212,7 @@ struct HistoryScreen: View {
                 }
         }
         .historyDeleteConfirmation(pending: $pendingDelete, store: store) { ids in
+            onDeleted(ids)
             selection.subtract(ids.map(HistorySelection.session))
             path.removeAll { item in
                 if case .session(let id) = item { return ids.contains(id) }
