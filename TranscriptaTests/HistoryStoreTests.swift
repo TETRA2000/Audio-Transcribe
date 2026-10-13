@@ -21,6 +21,19 @@ struct HistoryStoreTests {
         )!
     }
 
+    @Test func selectionKeepsOnlySessionsTheSearchShows() throws {
+        let store = try HistoryStore(inMemory: true)
+        let shown = UUID()
+        let hidden = UUID()
+        try store.upsert(id: shown, snapshot: snapshot("budget review"))
+        try store.upsert(id: hidden, snapshot: snapshot("lunch"))
+        var selection: Set<HistorySelection> = [.currentSession, .session(shown), .session(hidden)]
+
+        selection.keepSessions(shownFor: "Budget", in: store)
+
+        #expect(selection == [.currentSession, .session(shown)])
+    }
+
     @Test func upsertStampsEachSave() throws {
         let store = try HistoryStore(inMemory: true)
         let id = UUID()

@@ -121,6 +121,10 @@ struct ContentView: View {
             }
             .searchable(text: $historyQuery, placement: .sidebar, prompt: "Search History")
             .historySearchDebounce(historyQuery, into: $historySearch)
+            .onChange(of: historySearch) {
+                sidebarSelection.keepSessions(shownFor: historySearch, in: historyStore)
+                if sidebarSelection.isEmpty { sidebarSelection = [.currentSession] }
+            }
             .onDeleteCommand {
                 if !selectedSessionIDs.isEmpty { pendingDelete = selectedSessionIDs }
             }

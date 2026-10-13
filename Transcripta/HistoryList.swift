@@ -7,6 +7,17 @@ enum HistorySelection: Hashable {
     case session(UUID)
 }
 
+extension Set<HistorySelection> {
+    /// Drops the sessions a new search hides, so deleting the selection never deletes rows that aren't shown.
+    mutating func keepSessions(shownFor query: String, in store: HistoryStore?) {
+        let shown = (try? store?.ids(matching: query)) ?? []
+        self = filter { item in
+            if case .session(let id) = item { return shown.contains(id) }
+            return true
+        }
+    }
+}
+
 /// The saved sessions as list sections, newest first and grouped by day. When `query` isn't blank, only matching
 /// sessions are shown, each with a snippet. Must be inside a `List` with the History container in the environment.
 struct HistorySections: View {
@@ -258,6 +269,7 @@ struct HistoryScreen: View {
             }
             .searchable(text: $query, prompt: "Search transcripts and summaries")
             .historySearchDebounce(query, into: $searchQuery)
+            .onChange(of: searchQuery) { selection.keepSessions(shownFor: searchQuery, in: store) }
             .modelContainer(store.container)
         } else {
             HistoryUnavailableView(message: storeError)

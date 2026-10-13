@@ -61,6 +61,11 @@ final class HistoryStore: HistorySaving {
         try context.fetch(Self.descriptor(matching: query))
     }
 
+    /// The IDs of the sessions the History list shows for `query`.
+    func ids(matching query: String) throws -> Set<UUID> {
+        Set(try fetch(matching: query).map(\.id))
+    }
+
     func delete(_ ids: Set<UUID>) throws {
         let ids = Array(ids)
         let sessions = try context.fetch(FetchDescriptor<HistorySession>(predicate: #Predicate { ids.contains($0.id) }))
