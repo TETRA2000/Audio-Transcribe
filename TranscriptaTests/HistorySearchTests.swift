@@ -16,6 +16,10 @@ struct HistorySearchTests {
         #expect(HistorySearch.fold("がっこう") != HistorySearch.fold("かっこう"))
     }
 
+    @Test func foldIsPrecomposed() {
+        #expect(HistorySearch.fold("ｶﾞｯｺｳ").unicodeScalars.elementsEqual("ガッコウ".unicodeScalars))
+    }
+
     @Test func rangesAreInTheOriginalText() {
         #expect(found("cafe", in: "Café au lait, CAFE noir") == ["Café", "CAFE"])
     }

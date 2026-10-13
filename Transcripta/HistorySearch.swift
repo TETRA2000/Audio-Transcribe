@@ -9,9 +9,11 @@ import Foundation
 nonisolated enum HistorySearch {
     /// Case-, diacritic- and width-insensitive. Compatibility normalization (NFKC) comes first, so half-width
     /// katakana with a separate voiced mark (ｶﾞ) becomes the full-width character (ガ). Japanese voiced marks are
-    /// kept: か and が stay different.
+    /// kept: か and が stay different. The result is NFC (precomposed), so SwiftData's code-point `contains` matches it.
     static func fold(_ text: String) -> String {
-        String(text.flatMap(foldCharacter))
+        // NFC at the end: folding can leave a voiced mark separate (カ + ゙), and SwiftData's `contains` compares
+        // code points, so the stored key and the query must both be composed.
+        String(text.flatMap(foldCharacter)).precomposedStringWithCanonicalMapping
     }
 
     /// Everything a session is searched by, in the order snippets prefer: the file name, the speakers, the
