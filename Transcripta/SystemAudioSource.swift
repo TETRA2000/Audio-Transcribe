@@ -153,9 +153,9 @@ final class SystemAudioSource {
             else { return }
             var description = Self.tapDescription(for: target, processObjectIDs: processes, uuid: uuid)
             var address = CoreAudioProperty.address(kAudioTapPropertyDescription)
-            let status = AudioObjectSetPropertyData(
-                self.tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), &description
-            )
+            let status = withUnsafePointer(to: &description) {
+                AudioObjectSetPropertyData(self.tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), $0)
+            }
             // On failure, keep `current` so the next process-list change tries again.
             if status == noErr { current = processes }
         }

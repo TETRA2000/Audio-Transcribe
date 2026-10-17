@@ -20,7 +20,7 @@ enum CoreAudioProperty {
         var address = Self.address(selector, scope: scope)
         var value = initial
         var size = UInt32(MemoryLayout<T>.size)
-        let status = AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value)
+        let status = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0) }
         return status == noErr ? value : nil
     }
 
@@ -35,7 +35,8 @@ enum CoreAudioProperty {
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(object, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
         var values = [T](repeating: initial, count: Int(size) / MemoryLayout<T>.stride)
-        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &values) == noErr else { return [] }
+        let status = values.withUnsafeMutableBytes { AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0.baseAddress!) }
+        guard status == noErr else { return [] }
         return Array(values.prefix(Int(size) / MemoryLayout<T>.stride))
     }
 
