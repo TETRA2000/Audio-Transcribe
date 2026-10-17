@@ -12,13 +12,13 @@
 			containerPortal = 000000000000000000000000 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 000000000000000100000000;
-			remoteInfo = "Transcripta";
+			remoteInfo = Transcripta;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Transcripta.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Transcripta.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		000000000000000000000121 /* TranscriptaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "TranscriptaTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000121 /* TranscriptaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TranscriptaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -37,12 +37,12 @@
 			exceptions = (
 				A9E17BA930677E3E006D3984 /* Exceptions for "Transcripta" folder in "Transcripta" target */,
 			);
-			path = "Transcripta";
+			path = Transcripta;
 			sourceTree = "<group>";
 		};
 		000000000000000000000011 /* TranscriptaTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "TranscriptaTests";
+			path = TranscriptaTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -95,7 +95,7 @@
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* Transcripta */,
 			);
-			name = "Transcripta";
+			name = Transcripta;
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Transcripta.app */;
 			productType = "com.apple.product-type.application";
@@ -116,8 +116,8 @@
 			fileSystemSynchronizedGroups = (
 				000000000000000000000011 /* TranscriptaTests */,
 			);
-			name = "TranscriptaTests";
-			productName = "TranscriptaTests";
+			name = TranscriptaTests;
+			productName = TranscriptaTests;
 			productReference = 000000000000000000000121 /* TranscriptaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
@@ -348,7 +348,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Transcripta/Info.plist";
+				INFOPLIST_FILE = Transcripta/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone to transcribe your speech.";
@@ -401,7 +401,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Transcripta/Info.plist";
+				INFOPLIST_FILE = Transcripta/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone to transcribe your speech.";
